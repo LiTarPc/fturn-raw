@@ -1,0 +1,23 @@
+[Unit]
+Description=Experimental fturn Raw IPv4 server
+Wants=network-online.target
+After=network-online.target ufw.service
+ConditionPathExists=/dev/net/tun
+
+[Service]
+Type=simple
+ExecStartPre=/opt/fturn-raw/raw-firewall up
+ExecStart=/opt/fturn-raw/raw-server -listen 0.0.0.0:56010 -tun ftraw0 -address 10.77.0.1/24 -client-ip 10.77.0.2 -mtu 1420 -obf-profile rtpopus2 -obf-key-file /etc/fturn-raw/raw.key
+ExecStopPost=/opt/fturn-raw/raw-firewall down
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=CAP_NET_ADMIN
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

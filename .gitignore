@@ -1,0 +1,48 @@
+.idea
+.claude
+CLAUDE.md
+*.exe
+*.so
+*.tmp
+*.tmp.*
+/dist/
+/build/
+*.test
+coverage.out
+# Скомпилированные бинари cmd/client и cmd/server
+/client
+/server
+.env
+clients.json
+client_config.json
+vk_persona.json
+vk_turn_creds.json
+captcha_page.html
+node_modules
+dist
+/mobile-dist/
+
+# Raw experiment local secrets
+raw.key
+*.raw.key
+
+# Windows UI build products and personal profiles
+/ui/newservice/build/bin/
+/ui/newservice/frontend/wailsjs/
+/ui/newservice/*_windows_amd64.syso
+/ui/newservice/connection.json
+**/route-state.json
+**/ui.log
+**/vk_turn_creds.json
+**/vk_persona.json
+
+*.syso
+
+/ui/newservice/profiles.json
+/ui/newservice/.profiles-*.tmp
+
+/ui/newservice/app-settings.json
+/ui/newservice/.settings-*.tmp
+
+# Separate publication checkout and installer staging
+/release-work/
