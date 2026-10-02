@@ -23,8 +23,9 @@ try {
  Copy-Item -LiteralPath (Join-Path $projectRoot 'ui/newservice/ATTRIBUTION.md'),(Join-Path $projectRoot 'ui/newservice/SYSTRAY-LICENSE.txt') -Destination $outputDir
  Copy-Item -LiteralPath (Join-Path $projectRoot 'ui/windows/connection.example.json') -Destination (Join-Path $outputDir 'connection.json')
  Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/raw-windows-ui.md') -Destination (Join-Path $outputDir 'README.md')
+ & (Join-Path $PSScriptRoot 'collect-raw-licenses.ps1') -OutputFile (Join-Path $outputDir 'THIRD-PARTY-NOTICES.txt')
  # Explicit file list: a previously used output folder may contain imported private keys.
- $bundleFiles=@('FturnRaw.exe','raw-client.exe','wintun.dll','WINTUN-LICENSE.txt','LICENSE','UI-LICENSE.txt','ATTRIBUTION.md','SYSTRAY-LICENSE.txt','routes.ps1','connection.json','README.md') | ForEach-Object {Join-Path $outputDir $_}
+ $bundleFiles=@('FturnRaw.exe','raw-client.exe','wintun.dll','WINTUN-LICENSE.txt','LICENSE','UI-LICENSE.txt','ATTRIBUTION.md','SYSTRAY-LICENSE.txt','routes.ps1','connection.json','README.md','THIRD-PARTY-NOTICES.txt') | ForEach-Object {Join-Path $outputDir $_}
  Compress-Archive -LiteralPath $bundleFiles -DestinationPath (Join-Path $projectRoot 'dist/fturn-raw-windows-ui-newservice.zip') -Force
  Write-Host 'Built Newservice-based Windows UI; public package has no private key or call link.'
 }finally{$env:GOARCH=$oldArch;$env:CGO_ENABLED=$oldCGO;Pop-Location}

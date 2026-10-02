@@ -104,6 +104,7 @@ Section "fturn Raw" MainSection
  File "${PAYLOAD_DIR}\WINTUN-LICENSE.txt"
  File "${PAYLOAD_DIR}\SYSTRAY-LICENSE.txt"
  File "${PAYLOAD_DIR}\ATTRIBUTION.md"
+ File "${PAYLOAD_DIR}\THIRD-PARTY-NOTICES.txt"
  File "${PAYLOAD_DIR}\README.md"
  ; Do not overwrite a legacy configuration during upgrade; profiles use AppData.
  SetOverwrite off
@@ -148,6 +149,7 @@ Section "Uninstall"
  Delete "$INSTDIR\WINTUN-LICENSE.txt"
  Delete "$INSTDIR\SYSTRAY-LICENSE.txt"
  Delete "$INSTDIR\ATTRIBUTION.md"
+ Delete "$INSTDIR\THIRD-PARTY-NOTICES.txt"
  Delete "$INSTDIR\README.md"
  ; connection.json may contain legacy personal settings: preserve it.
  Delete "$INSTDIR\setup-support.ps1"
