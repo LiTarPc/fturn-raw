@@ -1,4 +1,4 @@
-param(
+﻿param(
  [ValidateSet('windows-amd64','linux-amd64','linux-arm64')]
  [string[]]$Targets = @('windows-amd64','linux-amd64','linux-arm64'),
  [switch]$SkipWintun
@@ -28,19 +28,7 @@ try {
   Write-Host "Built $target"
  }
  if ('windows-amd64' -in $Targets -and -not $SkipWintun) {
-  $archivePath = Join-Path $distRoot 'wintun-0.14.1.zip'
-  $expectedHash = '07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51'
-  if (-not (Test-Path -LiteralPath $archivePath)) {
-   Invoke-WebRequest -Uri 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $archivePath
-  }
-  $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-  if ($actualHash -ne $expectedHash) { throw 'Wintun archive hash does not match the official pinned release.' }
-  $unpackPath = Join-Path $distRoot 'wintun-package'
-  Expand-Archive -LiteralPath $archivePath -DestinationPath $unpackPath -Force
-  $outputDir = Join-Path $distRoot 'windows-amd64'
-  Copy-Item -LiteralPath (Join-Path $unpackPath 'wintun/bin/amd64/wintun.dll') -Destination $outputDir
-  Copy-Item -LiteralPath (Join-Path $unpackPath 'wintun/LICENSE.txt') -Destination (Join-Path $outputDir 'WINTUN-LICENSE.txt')
-  Write-Host 'Bundled official Wintun 0.14.1 (SHA256 verified); no driver was installed.'
+  & (Join-Path $PSScriptRoot 'bundle-raw-wintun.ps1') -OutputDir (Join-Path $distRoot 'windows-amd64')
  }
  foreach ($target in $Targets) {
   $outputDir = Join-Path $distRoot $target

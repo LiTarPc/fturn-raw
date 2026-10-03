@@ -1,8 +1,9 @@
-﻿param([Parameter(Mandatory=$true)][string]$OutputFile)
+﻿param([Parameter(Mandatory=$true)][string]$OutputFile,[switch]$ServerOnly)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $modules=@()
-foreach($target in @(@{Dir=$root;Package='./cmd/raw-client'},@{Dir=(Join-Path $root 'ui/newservice');Package='.'})){
+$targets=if($ServerOnly){@(@{Dir=$root;Package='./cmd/raw-server'})}else{@(@{Dir=$root;Package='./cmd/raw-client'},@{Dir=(Join-Path $root 'ui/newservice');Package='.'})}
+foreach($target in $targets){
  Push-Location $target.Dir
  try{
   $modules+=@(go list -deps -f '{{if .Module}}{{.Module.Path}}|{{.Module.Version}}|{{.Module.Dir}}{{end}}' $target.Package)
@@ -10,7 +11,8 @@ foreach($target in @(@{Dir=$root;Package='./cmd/raw-client'},@{Dir=(Join-Path $r
  }finally{Pop-Location}
 }
 $parts=[Collections.Generic.List[string]]::new()
-$parts.Add('fturn Raw - dependency license notices. Generated from modules used by the Windows client and UI. Paths in the build machine are intentionally omitted.')
+$scope=if($ServerOnly){'server core'}else{'Windows client and UI'}
+$parts.Add("fturn Raw - dependency license notices. Generated from modules used by the $scope. Paths in the build machine are intentionally omitted.")
 $goroot=go env GOROOT
 if($LASTEXITCODE -ne 0){throw 'Cannot locate Go license'}
 $parts.Add("`n===== Go standard library =====`n"+[IO.File]::ReadAllText((Join-Path $goroot 'LICENSE')))

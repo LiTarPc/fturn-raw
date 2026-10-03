@@ -1,4 +1,4 @@
-# fturn Raw
+﻿# fturn Raw
 
 Экспериментальный Raw IPv4-клиент для Windows с интерфейсом, профилями и сервером для Linux. Клиент передаёт IPv4 через VK TURN; внешний транспорт Windows-клиента — TCP. Это собственный протокол проекта, несовместимый с обычным сервером FreeTurn или qWDTT.
 
@@ -33,15 +33,15 @@ go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 
 Скрипт собирает ядро и интерфейс, запускает проверки маршрутов и backend, загружает Wintun 0.14.1 с проверкой закреплённого SHA256 и создаёт NSIS EXE в `dist`. [Описание установщика и проверок](docs/raw-installer.md).
 
-Сервер Linux:
+Серверные ядра для Linux amd64, Linux arm64 и Windows x64 доступны в релизах отдельными ZIP. Windows-пакет включает Wintun. [Инструкция сервера](docs/raw-server.md). Сборка всех серверных пакетов:
 
 ```powershell
-.\scripts\build-raw.ps1 -Targets linux-amd64
+.\scripts\build-raw-server.ps1 -Version 0.1.0
 ```
 
 [Установка сервера на Debian](docs/raw-deployment.md). Для каждого экземпляра создайте собственный ключ; приватные ключи и конфигурации не коммитьте.
 
-GitHub Actions собирает Windows-пакет на push/PR. Тег `v0.1.0` запускает публикацию экспериментального релиза с установщиком, portable ZIP и SHA256SUMS. Версия тега должна соответствовать `info.productVersion` в `ui/newservice/wails.json`.
+GitHub Actions собирает Windows-пакет на push/PR. Тег `v0.1.0` запускает публикацию экспериментального релиза с установщиком, portable ZIP, тремя серверными пакетами и контрольными суммами. Версия тега должна соответствовать `info.productVersion` в `ui/newservice/wails.json`.
 
 ## Происхождение и лицензии
 

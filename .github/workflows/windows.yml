@@ -1,4 +1,4 @@
-﻿name: Windows Raw
+﻿name: Raw packages
 on:
   push:
     branches: [main]
@@ -60,9 +60,47 @@ jobs:
             dist/*-windows-x64-portable.zip
             dist/SHA256SUMS
           if-no-files-found: error
+  servers:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            os: ubuntu-latest
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: windows-amd64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+      - name: Server protocol tests
+        shell: pwsh
+        run: |
+          go test ./internal/rawvpn ./internal/config ./cmd/raw-server
+          if ($LASTEXITCODE -ne 0) { throw 'Server tests failed' }
+      - name: Build and validate server package
+        shell: pwsh
+        env:
+          SERVER_TARGET: ${{ matrix.target }}
+        run: |
+          $version=(Get-Content ui/newservice/wails.json -Raw | ConvertFrom-Json).info.productVersion
+          if ($env:GITHUB_REF -like 'refs/tags/*' -and $env:GITHUB_REF_NAME -ne ('v'+$version)) { throw 'Tag and product version must match' }
+          ./scripts/build-raw-server.ps1 -Version $version -Targets $env:SERVER_TARGET
+          ./scripts/test-raw-server-packages.ps1 -Version $version -Targets $env:SERVER_TARGET
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fturn-raw-server-${{ matrix.target }}
+          path: |
+            dist/fturn-raw-server-*-${{ matrix.target }}.zip
+            dist/SERVER-SHA256SUMS-${{ matrix.target }}
+          if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: windows
+    needs: [windows, servers]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -71,6 +109,15 @@ jobs:
         with:
           name: fturn-raw-windows-x64
           path: release
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fturn-raw-server-*
+          merge-multiple: true
+          path: release
+      - name: Merge server checksums
+        run: |
+          cat release/SERVER-SHA256SUMS-* | sort > release/SERVER-SHA256SUMS
+          rm release/SERVER-SHA256SUMS-linux-amd64 release/SERVER-SHA256SUMS-linux-arm64 release/SERVER-SHA256SUMS-windows-amd64
       - name: Publish experimental release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -81,4 +128,4 @@ jobs:
             echo "Release already exists; preserving published assets."
             exit 0
           fi
-          gh release create "$TAG" release/* --verify-tag --prerelease --title "fturn Raw $TAG" --notes "Experimental Windows x64 client: NSIS installer, portable ZIP, and SHA256SUMS. Profiles are stored in LocalAppData and preserved on upgrade/uninstall. Close the client via the tray before installing. The application and installer are currently unsigned."
+          gh release create "$TAG" release/* --verify-tag --prerelease --title "fturn Raw $TAG" --notes "Experimental Windows x64 client (NSIS and portable), server cores for Linux amd64/arm64 and Windows amd64, and client/server SHA256 manifests. Profiles are stored in LocalAppData and preserved on upgrade/uninstall. Close the client via the tray before installing. The application and installer are currently unsigned."
