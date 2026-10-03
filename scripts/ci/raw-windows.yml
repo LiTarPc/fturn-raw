@@ -1,4 +1,4 @@
-﻿name: Raw packages
+name: Raw packages
 on:
   push:
     branches: [main]
@@ -11,6 +11,20 @@ concurrency:
   group: raw-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
+  package-plan:
+    runs-on: ubuntu-latest
+    outputs:
+      servers: ${{ steps.plan.outputs.servers }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        run: |
+          python3 - <<'PY'
+          import json, os
+          plan = json.load(open('scripts/ci/release-plan.json', encoding='utf-8'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('servers=' + str(bool(plan['serverPackages'])).lower() + '\n')
+          PY
   windows:
     runs-on: windows-latest
     steps:
@@ -36,7 +50,7 @@ jobs:
       - name: Protocol tests
         shell: pwsh
         run: |
-          go test ./internal/bypass ./internal/rawvpn ./internal/session ./internal/config
+          go test ./internal/bypass ./internal/rawvpn ./internal/session ./internal/config ./internal/provider/vk/...
           if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
           Push-Location shared/bypass
           go test ./...
@@ -65,6 +79,8 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
   servers:
+    needs: package-plan
+    if: needs.package-plan.outputs.servers == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -103,7 +119,7 @@ jobs:
             dist/SERVER-SHA256SUMS-${{ matrix.target }}
           if-no-files-found: error
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.windows.result == 'success' && (needs.servers.result == 'success' || needs.servers.result == 'skipped')
     needs: [windows, servers]
     runs-on: ubuntu-latest
     permissions:
@@ -114,11 +130,13 @@ jobs:
           name: fturn-raw-windows-x64
           path: release
       - uses: actions/download-artifact@v4
+        if: needs.servers.result == 'success'
         with:
           pattern: fturn-raw-server-*
           merge-multiple: true
           path: release
       - name: Merge server checksums
+        if: needs.servers.result == 'success'
         run: |
           cat release/SERVER-SHA256SUMS-* | sort > release/SERVER-SHA256SUMS
           rm release/SERVER-SHA256SUMS-linux-amd64 release/SERVER-SHA256SUMS-linux-arm64 release/SERVER-SHA256SUMS-windows-amd64
@@ -132,4 +150,4 @@ jobs:
             echo "Release already exists; preserving published assets."
             exit 0
           fi
-          gh release create "$TAG" release/* --verify-tag --prerelease --title "fturn Raw $TAG" --notes "Experimental Windows x64 client (NSIS and portable), server cores for Linux amd64/arm64 and Windows amd64, and client/server SHA256 manifests. Profiles are stored in LocalAppData and preserved on upgrade/uninstall. Close the client via the tray before installing. The application and installer are currently unsigned."
+          gh release create "$TAG" release/* --verify-tag --prerelease --title "fturn Raw $TAG" --notes "Experimental Windows x64 client (NSIS and portable) and SHA256 manifest. Optional server packages are controlled by the release plan. Profiles are stored in LocalAppData and preserved on upgrade/uninstall. Close the client via the tray before installing. The application and installer are currently unsigned."

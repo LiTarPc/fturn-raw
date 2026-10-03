@@ -13,6 +13,7 @@ type ClientOptions struct {
 	MTU              int
 	KeyFile          string
 	BypassFile       string
+	StateDir         string
 	ControlInterface int
 }
 
@@ -22,7 +23,7 @@ func ParseClientOptions(args []string) (ClientOptions, []string, error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		flag, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-		if !strings.HasPrefix(arg, "-") || (flag != "tun" && flag != "raw-address" && flag != "raw-mtu" && flag != "obf-key-file" && flag != "control-interface" && flag != "bypass-file") {
+		if !strings.HasPrefix(arg, "-") || (flag != "tun" && flag != "raw-address" && flag != "raw-mtu" && flag != "obf-key-file" && flag != "control-interface" && flag != "bypass-file" && flag != "state-dir") {
 			rest = append(rest, arg)
 			continue
 		}
@@ -50,6 +51,8 @@ func ParseClientOptions(args []string) (ClientOptions, []string, error) {
 				return o, nil, fmt.Errorf("-control-interface must be a nonnegative interface index")
 			}
 			o.ControlInterface = n
+		case "state-dir":
+			o.StateDir = value
 		case "bypass-file":
 			o.BypassFile = value
 		case "obf-key-file":

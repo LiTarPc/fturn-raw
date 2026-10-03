@@ -67,7 +67,7 @@ func (s *captchaSession) solveSliderCaptcha(
 
 	limit := min(puzzle.Attempts, len(guesses))
 	if limit <= 0 {
-		return "", errors.New("slider has no attempts available")
+		return "", ErrRateLimited
 	}
 	attempts := pickSliderAttempts(guesses, limit)
 	s.logger().Debugf("[Captcha] slider guesses ranked: total=%d limit=%d", len(guesses), limit)

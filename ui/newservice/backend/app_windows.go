@@ -21,6 +21,7 @@ type Profile struct {
 	RouteMode string
 }
 type Snapshot struct {
+	AuthRetryAt    int64          `json:"authRetryAt"`
 	BypassActive   bool           `json:"bypassActive"`
 	Bypass         BypassSnapshot `json:"bypass"`
 	Profiles       []SavedProfile `json:"profiles"`
@@ -78,6 +79,9 @@ func newAppAt(root, dataDir string, initErr error) *App {
 		initErr = migrateUserData(root, dataDir)
 	}
 	if initErr == nil {
+		initErr = migrateCoreState(root, dataDir)
+	}
+	if initErr == nil {
 		a.loadProfiles()
 	} else {
 		a.storageErr = initErr
@@ -92,6 +96,11 @@ func newAppAt(root, dataDir string, initErr error) *App {
 	a.bypass = newBypassService(dataDir)
 	if initErr != nil {
 		a.bypass.loadErr = initErr
+	}
+	if initErr == nil && a.storageErr == nil {
+		if err := archiveLegacyData(root, dataDir); err != nil {
+			a.appendLog("Не удалось архивировать старые файлы: " + err.Error())
+		}
 	}
 	a.startupDone = make(chan struct{})
 	a.desktop = &desktopController{tray: &nativeTray{}, snapshot: a.GetSnapshot, settings: a.settings.get, log: a.appendLog, toggle: func() {
@@ -116,6 +125,7 @@ func (a *App) GetSnapshot() Snapshot {
 	a.mu.Lock()
 	snap.BypassActive = a.bypassActive
 	a.mu.Unlock()
+	snap.AuthRetryAt = authRetryAt(a.dataDir, time.Now())
 	snap.Settings = a.settings.get()
 	snap.Bypass = a.bypass.snapshot()
 	snap.TrayReady = a.desktop != nil && a.desktop.ready.Load()

@@ -4,7 +4,7 @@
 !include "WinVer.nsh"
 !include "LogicLib.nsh"
 !ifndef VERSION
- !define VERSION "0.1.1"
+ !define VERSION "0.1.2"
 !endif
 !ifndef PAYLOAD_DIR
  !error "PAYLOAD_DIR is required"
@@ -94,23 +94,35 @@ Section "fturn Raw" MainSection
   Abort
  ${EndIf}
 !endif
- ; Explicit file list prevents accidentally packaging keys or used profiles.
+ ; Explicit manifest; no personal configurations are shipped.
  File "${PAYLOAD_DIR}\FturnRaw.exe"
- File "${PAYLOAD_DIR}\raw-client.exe"
- File "${PAYLOAD_DIR}\wintun.dll"
- File "${PAYLOAD_DIR}\routes.ps1"
- File "${PAYLOAD_DIR}\LICENSE"
- File "${PAYLOAD_DIR}\UI-LICENSE.txt"
- File "${PAYLOAD_DIR}\WINTUN-LICENSE.txt"
- File "${PAYLOAD_DIR}\SYSTRAY-LICENSE.txt"
- File "${PAYLOAD_DIR}\ATTRIBUTION.md"
- File "${PAYLOAD_DIR}\THIRD-PARTY-NOTICES.txt"
- File "${PAYLOAD_DIR}\README.md"
- ; Do not overwrite a legacy configuration during upgrade; profiles use AppData.
- SetOverwrite off
- File "${PAYLOAD_DIR}\connection.json"
- SetOverwrite on
+ SetOutPath "$INSTDIR\runtime"
+ File "${PAYLOAD_DIR}\runtime\raw-client.exe"
+ File "${PAYLOAD_DIR}\runtime\wintun.dll"
+ File "${PAYLOAD_DIR}\runtime\routes.ps1"
  File "setup-support.ps1"
+ SetOutPath "$INSTDIR\licenses"
+ File "${PAYLOAD_DIR}\licenses\LICENSE"
+ File "${PAYLOAD_DIR}\licenses\UI-LICENSE.txt"
+ File "${PAYLOAD_DIR}\licenses\WINTUN-LICENSE.txt"
+ File "${PAYLOAD_DIR}\licenses\SYSTRAY-LICENSE.txt"
+ File "${PAYLOAD_DIR}\licenses\ATTRIBUTION.md"
+ File "${PAYLOAD_DIR}\licenses\THIRD-PARTY-NOTICES.txt"
+ SetOutPath "$INSTDIR\docs"
+ File "${PAYLOAD_DIR}\docs\README.md"
+ ; Old owned public files can be removed after prerequisites succeed.
+ Delete "$INSTDIR\raw-client.exe"
+ Delete "$INSTDIR\wintun.dll"
+ Delete "$INSTDIR\routes.ps1"
+ Delete "$INSTDIR\LICENSE"
+ Delete "$INSTDIR\UI-LICENSE.txt"
+ Delete "$INSTDIR\WINTUN-LICENSE.txt"
+ Delete "$INSTDIR\SYSTRAY-LICENSE.txt"
+ Delete "$INSTDIR\ATTRIBUTION.md"
+ Delete "$INSTDIR\THIRD-PARTY-NOTICES.txt"
+ Delete "$INSTDIR\README.md"
+ Delete "$INSTDIR\setup-support.ps1"
+ SetOutPath "$INSTDIR"
  WriteUninstaller "$INSTDIR\Uninstall.exe"
  CreateDirectory "$SMPROGRAMS\${APP_NAME}"
  CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\FturnRaw.exe"
@@ -130,7 +142,7 @@ SectionEnd
 Section "Uninstall"
 !ifndef TEST_MODE
  ${DisableX64FSRedirection}
- nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\setup-support.ps1" -Action Uninstall -InstallDir "$INSTDIR"'
+ nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\runtime\setup-support.ps1" -Action Uninstall -InstallDir "$INSTDIR"'
  ${EnableX64FSRedirection}
  Pop $0
  Pop $1
@@ -141,6 +153,7 @@ Section "Uninstall"
  ${EndIf}
 !endif
  Delete "$INSTDIR\FturnRaw.exe"
+ Delete "$INSTDIR\Uninstall.exe"
  Delete "$INSTDIR\raw-client.exe"
  Delete "$INSTDIR\wintun.dll"
  Delete "$INSTDIR\routes.ps1"
@@ -151,9 +164,22 @@ Section "Uninstall"
  Delete "$INSTDIR\ATTRIBUTION.md"
  Delete "$INSTDIR\THIRD-PARTY-NOTICES.txt"
  Delete "$INSTDIR\README.md"
- ; connection.json may contain legacy personal settings: preserve it.
  Delete "$INSTDIR\setup-support.ps1"
- Delete "$INSTDIR\Uninstall.exe"
+ Delete "$INSTDIR\runtime\raw-client.exe"
+ Delete "$INSTDIR\runtime\wintun.dll"
+ Delete "$INSTDIR\runtime\routes.ps1"
+ Delete "$INSTDIR\runtime\setup-support.ps1"
+ Delete "$INSTDIR\licenses\LICENSE"
+ Delete "$INSTDIR\licenses\UI-LICENSE.txt"
+ Delete "$INSTDIR\licenses\WINTUN-LICENSE.txt"
+ Delete "$INSTDIR\licenses\SYSTRAY-LICENSE.txt"
+ Delete "$INSTDIR\licenses\ATTRIBUTION.md"
+ Delete "$INSTDIR\licenses\THIRD-PARTY-NOTICES.txt"
+ Delete "$INSTDIR\docs\README.md"
+ RMDir "$INSTDIR\runtime"
+ RMDir "$INSTDIR\licenses"
+ RMDir "$INSTDIR\docs"
+ ; Personal data, legacy configurations and unrelated files are preserved.
  ; Never recursively remove an install directory or the user's AppData.
  RMDir "$INSTDIR"
  Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"

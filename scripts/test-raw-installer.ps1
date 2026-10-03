@@ -1,8 +1,8 @@
-﻿param([switch]$SkipCompile)
+param([switch]$SkipCompile)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $expectedVersion=(Get-Content -LiteralPath (Join-Path $root 'ui/newservice/wails.json') -Raw | ConvertFrom-Json).info.productVersion
-$testRoot=Join-Path $root 'dist/installer-smoke'
+$testRoot=Join-Path $root 'dist/installer-smoke-clean'
 $target=Join-Path $testRoot 'installed'
 $setup=Join-Path $testRoot 'setup-test.exe'
 New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
@@ -21,15 +21,18 @@ function Install-Test {
  Assert ($process.ExitCode -eq 0) 'NSIS silent install failed'
 }
 Install-Test
-$source=Join-Path $root 'dist/windows-ui-newservice'
-foreach($file in @('FturnRaw.exe','raw-client.exe','wintun.dll','routes.ps1')){
+$source=Join-Path $root 'dist/windows-ui-clean'
+foreach($file in @('FturnRaw.exe','runtime/raw-client.exe','runtime/wintun.dll','runtime/routes.ps1','licenses/LICENSE','docs/README.md')){
  Assert ((Get-FileHash -LiteralPath (Join-Path $source $file)).Hash -eq (Get-FileHash -LiteralPath (Join-Path $target $file)).Hash) "Payload hash mismatch: $file"
 }
 $personal=Join-Path $target 'connection.json'
 [IO.File]::WriteAllText($personal,'{"legacy":"preserve-during-upgrade"}')
 $userFile=Join-Path $target 'user-notes.txt'
 [IO.File]::WriteAllText($userFile,'preserve-during-uninstall')
+# Simulate owned files left by the former flat installer; preserve user files.
+foreach($name in @('raw-client.exe','wintun.dll','routes.ps1','README.md','LICENSE','setup-support.ps1')){[IO.File]::WriteAllText((Join-Path $target $name),'legacy owned file')}
 Install-Test
+foreach($name in @('raw-client.exe','wintun.dll','routes.ps1','README.md','LICENSE','setup-support.ps1')){Assert (-not(Test-Path -LiteralPath (Join-Path $target $name))) ('Upgrade retained flat file: '+$name)}
 Assert ((Get-Content -LiteralPath $personal -Raw) -eq '{"legacy":"preserve-during-upgrade"}') 'Upgrade overwrote legacy settings'
 $reg='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FturnRawInstallerTest'
 Assert ((Get-ItemProperty -LiteralPath $reg).DisplayVersion -eq $expectedVersion) 'Uninstall registration missing'

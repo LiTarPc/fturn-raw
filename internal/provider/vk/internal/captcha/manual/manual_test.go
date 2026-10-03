@@ -3,6 +3,7 @@ package manual
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"testing"
@@ -28,7 +29,13 @@ func TestRunCaptchaServerPresentsAfterListen(t *testing.T) {
 		keyCh <- "token"
 	}
 
-	got, err := runCaptchaServerAndWait(ctx, handler, localCaptchaOrigin(), keyCh, "test", present)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	start := func(s *http.Server, _ string) error { go func() { _ = s.Serve(listener) }(); return nil }
+	got, err := runCaptchaServerWithStart(ctx, handler, "http://"+listener.Addr().String(), keyCh, "test", present, start)
 	if err != nil {
 		t.Fatal(err)
 	}

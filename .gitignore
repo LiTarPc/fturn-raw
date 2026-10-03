@@ -51,3 +51,5 @@ raw.key
 **/bypass.json
 **/ru-cidr.txt
 **/bypass-session-*.json
+
+**/vk_auth_pause.json

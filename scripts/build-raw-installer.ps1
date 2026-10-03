@@ -1,5 +1,5 @@
-﻿param(
- [string]$Version='0.1.1',
+param(
+ [string]$Version='0.1.2',
  [switch]$SkipBuild,
  [switch]$TestMode,
  [string]$OutputFile
@@ -10,9 +10,8 @@ $projectRoot=Split-Path -Parent $PSScriptRoot
 $productVersion=(Get-Content -LiteralPath (Join-Path $projectRoot 'ui/newservice/wails.json') -Raw | ConvertFrom-Json).info.productVersion
 if($Version -ne $productVersion){throw 'Installer and Wails product versions must match'}
 if(-not $SkipBuild){& (Join-Path $PSScriptRoot 'build-raw-ui.ps1')}
-$payload=Join-Path $projectRoot 'dist/windows-ui-newservice'
-$config=Get-Content -LiteralPath (Join-Path $payload 'connection.json') -Raw | ConvertFrom-Json
-if($config.Server -or $config.VkLink -or $config.Key -or $config.KeyFile){throw 'Installer configuration must contain no personal data'}
+$payload=Join-Path $projectRoot 'dist/windows-ui-clean'
+foreach($name in @('FturnRaw.exe','runtime/raw-client.exe','runtime/wintun.dll','runtime/routes.ps1','licenses/THIRD-PARTY-NOTICES.txt')){if(-not(Test-Path -LiteralPath (Join-Path $payload $name))){throw ('Missing payload file: '+$name)}}
 $compiler=Get-Command makensis.exe -ErrorAction SilentlyContinue
 if($compiler){$compiler=$compiler.Source}else{$compiler=Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'}
 if(-not(Test-Path -LiteralPath $compiler)){throw 'Install NSIS 3 and add makensis.exe to PATH'}

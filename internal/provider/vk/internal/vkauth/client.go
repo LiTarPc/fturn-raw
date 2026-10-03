@@ -46,6 +46,8 @@ type Client struct {
 	store *Store
 
 	lockout           atomic.Int64
+	captchaPause      atomic.Int64
+	cooldown          cooldownStore
 	networkPauseUntil atomic.Int64
 
 	personaMu sync.RWMutex
@@ -96,6 +98,12 @@ func New(cfg Config) *Client {
 	c.persona = browserprofile.For(c.platform, c.identity)
 	if c.identity.Gen > 0 {
 		c.log.Debugf("[VK Auth] Persona gen=%d restored | User-Agent: %s", c.identity.Gen, c.persona.UserAgent)
+	}
+	c.cooldown = newCooldownStore(cfg.StatePaths)
+	if until := c.cooldown.load(); until > 0 {
+		c.captchaPause.Store(until)
+		c.lockout.Store(until)
+		c.log.Warnf("[VK Auth] CAPTCHA_RATE_LIMIT pause_until=%d; restored local pause", until)
 	}
 	return c
 }
@@ -244,6 +252,11 @@ func (c *Client) fetchSerialized(ctx context.Context, link string, streamID int)
 }
 
 func (c *Client) fetch(ctx context.Context, link string, streamID int) (string, string, []string, error) {
+	if until := max(c.captchaPause.Load(), c.cooldown.load()); time.Now().Unix() < until {
+		c.captchaPause.Store(until)
+		c.lockout.Store(max(until, c.lockout.Load()))
+		return "", "", nil, errors.Join(ErrCaptchaWaitRequired, captcha.ErrRateLimited)
+	}
 	if time.Now().Unix() < c.networkPauseUntil.Load() {
 		return "", "", nil, fmt.Errorf("VK network temporarily unavailable")
 	}

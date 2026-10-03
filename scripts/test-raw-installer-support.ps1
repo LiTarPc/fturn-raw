@@ -19,6 +19,9 @@ Assert $blocked 'A running GUI must block installation, without killing it'
 $script:gui=@();$script:cores=@([pscustomobject]@{ExecutablePath='C:\Installer-Test\raw-client.exe'})
 $blocked=$false;try{Assert-ClientStopped}catch{$blocked=$true}
 Assert $blocked 'The installed running core must block uninstall'
+$script:cores=@([pscustomobject]@{ExecutablePath='C:\Installer-Test\runtime\raw-client.exe'})
+$blocked=$false;try{Assert-ClientStopped}catch{$blocked=$true}
+Assert $blocked 'The nested running core must block uninstall'
 $script:cores=@([pscustomobject]@{ExecutablePath='C:\Another-App\raw-client.exe'})
 Assert-ClientStopped
 $script:pv='0.0.0.0'

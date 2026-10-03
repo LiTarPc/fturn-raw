@@ -20,6 +20,7 @@ import (
 	"github.com/samosvalishe/free-turn-proxy/internal/logx"
 	"github.com/samosvalishe/free-turn-proxy/internal/rawvpn"
 	"github.com/samosvalishe/free-turn-proxy/internal/session"
+	"github.com/samosvalishe/free-turn-proxy/internal/statedir"
 	"github.com/samosvalishe/free-turn-proxy/internal/wire/rtpopus"
 )
 
@@ -80,6 +81,12 @@ func run() error {
 	if err != nil || !prefix.Addr().Is4() {
 		return errors.New("-raw-address must be an IPv4 CIDR")
 	}
+	if opts.StateDir != "" {
+		if err = os.MkdirAll(opts.StateDir, 0700); err != nil {
+			return err
+		}
+		statedir.SetDir(opts.StateDir)
+	}
 	cfg.ClientID, _, err = clientid.Resolve(cfg.ClientID, clientid.DefaultPaths())
 	if err != nil {
 		return err
@@ -136,6 +143,7 @@ Usage:
   -raw-address cidr      Client IPv4 interface (default 10.77.0.2/24)
   -raw-mtu bytes         IP MTU 576..1500 (default 1280); must match server
   -control-interface n   Bind VK/TURN/DNS to a Windows adapter index
+  -state-dir path        Persistent client identity and VK pause directory
   -bypass-file path      Versioned global IPv4 bypass configuration (Windows)
   -n count               Streams per VK link (default 10, max 64 total)
   -transport name        TCP to TURN (default tcp), or udp

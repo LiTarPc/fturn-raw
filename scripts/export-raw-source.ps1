@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory=$true)][string]$Destination)
+п»їparam([Parameter(Mandatory=$true)][string]$Destination)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $Destination=[IO.Path]::GetFullPath($Destination)
@@ -11,7 +11,7 @@ try{
  if($LASTEXITCODE -ne 0){throw 'Cannot enumerate tracked source'}
  New-Item -ItemType Directory -Path $Destination | Out-Null
  foreach($file in $files){
-  $allowed=$file -in $allowedFiles -or ($file -like 'docs/raw-*.md') -or $file -eq 'scripts/ci/raw-windows.yml'
+  $allowed=$file -in $allowedFiles -or ($file -like 'docs/raw-*.md') -or $file -in @('scripts/ci/raw-windows.yml','scripts/ci/release-plan.json')
   foreach($prefix in $allowedDirs){if($file.StartsWith($prefix)){$allowed=$true}}
   if(-not $allowed){continue}
   $target=Join-Path $Destination $file

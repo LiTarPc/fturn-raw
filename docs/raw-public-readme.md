@@ -1,4 +1,4 @@
-﻿# fturn Raw
+# fturn Raw
 
 Экспериментальный Raw IPv4-клиент для Windows с интерфейсом, профилями и сервером для Linux. Клиент передаёт IPv4 через VK TURN; внешний транспорт Windows-клиента — TCP. Это собственный протокол проекта, несовместимый с обычным сервером FreeTurn или qWDTT.
 
@@ -32,7 +32,7 @@
 
 ```powershell
 go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
-.\scripts\build-raw-installer.ps1 -Version 0.1.1
+.\scripts\build-raw-installer.ps1 -Version 0.1.2
 ```
 
 Скрипт собирает ядро и интерфейс, запускает проверки маршрутов и backend, загружает Wintun 0.14.1 с проверкой закреплённого SHA256 и создаёт NSIS EXE в `dist`. [Описание установщика и проверок](docs/raw-installer.md).
@@ -50,3 +50,10 @@ GitHub Actions собирает Windows-пакет на push/PR. Тег `v0.1.1`
 ## Происхождение и лицензии
 
 Ядро основано на [samosvalishe/free-turn-proxy](https://github.com/samosvalishe/free-turn-proxy); имя Go-модуля сохранено для совместимости импортов. Лицензия ядра: [Happy Bunny License](LICENSE). Интерфейс адаптирован из предоставленного проекта Newservice / FTDirect и распространяется по [GNU GPL v3](ui/newservice/LICENSE). [Атрибуция UI](ui/newservice/ATTRIBUTION.md), [Apache 2.0 для systray](ui/newservice/SYSTRAY-LICENSE.txt); лицензии vendored-компонентов находятся в `third_party`. В установщик входят соответствующие тексты лицензий и лицензия Wintun.
+
+
+## Клиентское исправление 0.1.2
+
+Windows-пакет содержит `FturnRaw.exe`, подпапки `runtime`, `licenses` и `docs`; установленная версия также содержит `Uninstall.exe`. Состояние ядра сохраняется в `%LOCALAPPDATA%\fturn-raw\core`. Старые известные конфигурации архивируются после проверенной миграции, профили и ключи сохраняются.
+
+Явный лимит капчи VK теперь вызывает сохранённую локальную паузу на пять минут без смены персоны и ручного fallback. UI показывает время разрешённой повторной попытки. VK может держать ограничение дольше. Релиз 0.1.2 содержит только Windows-клиент; существующие серверы 0.1.1 совместимы и не требуют обновления. Автоматические тесты проверяют обработку лимита без обращения к VK.

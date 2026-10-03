@@ -39,7 +39,8 @@ var (
 	reCaptchaVKGlobal   = regexp.MustCompile(`window\.vk\s*=\s*\{`)
 	reCaptchaDebugInfo  = regexp.MustCompile(`[A-Za-z_$][\w$]*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"`)
 
-	errCaptchaRateLimit = errors.New("captcha session rate limit reached")
+	ErrRateLimited      = errors.New("captcha session rate limit reached")
+	errCaptchaRateLimit = ErrRateLimited
 	errCaptchaBot       = errors.New("captcha bot challenge")
 
 	ErrUnavailable = errors.New("captcha unavailable")
@@ -263,6 +264,9 @@ func (s *captchaSession) solveOnce(captchaErr *Error) (string, error) {
 	}
 	if err != nil {
 		// Живой посетитель, уходя с нерешённой captcha, закрывает виджет.
+		if errors.Is(err, ErrRateLimited) {
+			return "", err
+		}
 		if _, leaveErr := s.captchaRequest("captchaNotRobot.leaveCaptcha", base); leaveErr != nil {
 			s.logger().Debugf("[Captcha] leaveCaptcha failed: %v", leaveErr)
 		}
@@ -401,6 +405,9 @@ func (s *captchaSession) fetchCaptchaHTML(redirectURI string) (string, error) {
 	})
 	if err != nil {
 		return "", err
+	}
+	if status == 429 {
+		return "", fmt.Errorf("%w: captcha page HTTP 429", errors.Join(ErrUnavailable, ErrRateLimited))
 	}
 	if status < 200 || status > 299 {
 		return "", fmt.Errorf("%w: captcha page http %d (bytes=%d)", ErrUnavailable, status, len(body))
@@ -563,6 +570,9 @@ func (s *captchaSession) captchaRequest(method string, form [][2]string) (map[st
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("captcha api decode: %w", err)
 	}
+	if captchaLimitedResponse(out) {
+		return nil, ErrRateLimited
+	}
 	s.logger().Debugf("[Captcha] api %s response=%s", method, captchaAPIResponseSummary(out))
 	return out, nil
 }
@@ -675,7 +685,10 @@ func (s *captchaSession) doRaw(
 	form [][2]string,
 	extraHeaders map[string]string,
 ) ([]byte, error) {
-	data, _, err := s.doRawStatus(method, endpoint, form, extraHeaders)
+	data, status, err := s.doRawStatus(method, endpoint, form, extraHeaders)
+	if err == nil && status == 429 {
+		return nil, ErrRateLimited
+	}
 	return data, err
 }
 

@@ -7,9 +7,9 @@ function Assert-ClientStopped {
  if(@(Get-Process -Name FturnRaw -ErrorAction SilentlyContinue).Count){
   throw 'Close fturn Raw using Exit in the tray menu before installing or uninstalling.'
  }
- $core=Join-Path $InstallDir 'raw-client.exe'
+ $cores=@((Join-Path $InstallDir 'raw-client.exe'),(Join-Path $InstallDir 'runtime/raw-client.exe'))
  foreach($process in @(Get-CimInstance Win32_Process -Filter "Name='raw-client.exe'")){
-  if($process.ExecutablePath -and $process.ExecutablePath -ieq $core){
+  if($process.ExecutablePath -and $process.ExecutablePath -in $cores){
    throw 'The installed Raw core is still running. Exit the client first.'
   }
  }
@@ -51,13 +51,17 @@ function Remove-InstalledStartupTasks {
   Unregister-ScheduledTask -TaskName $task.TaskName -TaskPath '\' -Confirm:$false
  }
 }
+function Restore-InstalledRoutes {
+ foreach($dir in @($InstallDir,(Join-Path $InstallDir 'runtime'))){
+  $state=Join-Path $dir 'route-state.json'
+  if(Test-Path -LiteralPath $state){& (Join-Path $dir 'routes.ps1') -Action Remove -StateFile $state}
+ }
+}
 Assert-ClientStopped
 if($Action -eq 'Prepare'){
+ Restore-InstalledRoutes
  Install-WebView2
 }elseif($Action -eq 'Uninstall'){
- $state=Join-Path $InstallDir 'route-state.json'
- if(Test-Path -LiteralPath $state){
-  & (Join-Path $InstallDir 'routes.ps1') -Action Remove -StateFile $state
- }
+ Restore-InstalledRoutes
  Remove-InstalledStartupTasks
 }else{throw 'An installer action is required.'}
