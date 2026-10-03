@@ -1,4 +1,4 @@
-param([switch]$SkipGoBuild)
+﻿param([switch]$SkipGoBuild)
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
 $oldArch=$env:GOARCH;$oldCGO=$env:CGO_ENABLED;$oldOS=$env:GOOS
@@ -14,6 +14,8 @@ try {
  }
  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-raw-routes.ps1')
  if($LASTEXITCODE -ne 0){throw 'Route/privacy regression checks failed'}
+ & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-raw-watch.ps1')
+ if($LASTEXITCODE -ne 0){throw 'Crash guard integration checks failed'}
  Push-Location (Join-Path $projectRoot 'ui/newservice')
  try {
   go test ./backend

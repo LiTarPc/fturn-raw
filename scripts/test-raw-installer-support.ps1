@@ -1,4 +1,4 @@
-# Installer prerequisite and ownership regression checks with mocked OS/network APIs.
+﻿# Installer prerequisite and ownership regression checks with mocked OS/network APIs.
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $tokens=$null;$errors=$null
@@ -60,3 +60,22 @@ function Unregister-ScheduledTask {param($TaskName,$TaskPath,[switch]$Confirm);$
 Remove-InstalledStartupTasks
 Assert ($script:removed.Count -eq 1 -and $script:removed[0] -eq 'FturnRaw-owned') 'Only this installed executable owns removed startup tasks'
 Write-Host 'Installer prerequisite and ownership checks passed (no VPN or OS configuration changed).'
+
+# Upgrade/uninstall uses the incoming recovery script and propagates failures.
+$testDir=Join-Path ([IO.Path]::GetTempPath()) ('fturn-installer-recovery-'+[Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $testDir | Out-Null
+$RecoveryScript=Join-Path $testDir 'routes.ps1'
+try {
+ $stub='param($Action,$LegacyDirectory);@{action=$Action;legacy=$LegacyDirectory} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $PSScriptRoot ''calls.json'')'
+ [IO.File]::WriteAllText($RecoveryScript,$stub)
+ Restore-InstalledRoutes
+ $calls=Get-Content -LiteralPath (Join-Path $testDir 'calls.json') -Raw | ConvertFrom-Json
+ Assert ($calls.action -eq 'Recover' -and $calls.legacy -eq (Join-Path $InstallDir 'runtime')) 'Installer did not use shared and legacy recovery'
+ [IO.File]::WriteAllText($RecoveryScript,'throw ''Injected recovery failure''')
+ $failed=$false;try{Restore-InstalledRoutes}catch{$failed=$true}
+ Assert $failed 'Installer ignored failed network recovery'
+ Write-Host 'Installer shared-state recovery and failure propagation checks passed.'
+}finally {
+ foreach($name in 'routes.ps1','calls.json'){$path=Join-Path $testDir $name;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}}
+ Remove-Item -LiteralPath $testDir -Force
+}

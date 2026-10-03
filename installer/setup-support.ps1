@@ -1,6 +1,7 @@
-param(
+﻿param(
  [ValidateSet('Prepare','Uninstall')][string]$Action,
- [Parameter(Mandatory=$true)][string]$InstallDir
+ [Parameter(Mandatory=$true)][string]$InstallDir,
+ [string]$RecoveryScript=(Join-Path $PSScriptRoot 'routes.ps1')
 )
 $ErrorActionPreference='Stop'
 function Assert-ClientStopped {
@@ -52,11 +53,17 @@ function Remove-InstalledStartupTasks {
  }
 }
 function Restore-InstalledRoutes {
- foreach($dir in @($InstallDir,(Join-Path $InstallDir 'runtime'))){
-  $state=Join-Path $dir 'route-state.json'
-  if(Test-Path -LiteralPath $state){& (Join-Path $dir 'routes.ps1') -Action Remove -StateFile $state}
+ if(Test-Path -LiteralPath $RecoveryScript){
+  & $RecoveryScript -Action Recover -LegacyDirectory (Join-Path $InstallDir 'runtime')
+  if(-not $?){throw 'Raw network recovery failed; installation was stopped.'}
+ }else{
+  foreach($dir in @($InstallDir,(Join-Path $InstallDir 'runtime'))){
+   $state=Join-Path $dir 'route-state.json'
+   if(Test-Path -LiteralPath $state){& (Join-Path $dir 'routes.ps1') -Action Remove -StateFile $state}
+  }
  }
 }
+
 Assert-ClientStopped
 if($Action -eq 'Prepare'){
  Restore-InstalledRoutes

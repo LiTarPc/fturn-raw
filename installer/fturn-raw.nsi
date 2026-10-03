@@ -4,7 +4,7 @@
 !include "WinVer.nsh"
 !include "LogicLib.nsh"
 !ifndef VERSION
- !define VERSION "0.1.3"
+ !define VERSION "0.1.4"
 !endif
 !ifndef PAYLOAD_DIR
  !error "PAYLOAD_DIR is required"
@@ -83,6 +83,7 @@ Section "fturn Raw" MainSection
 !ifndef TEST_MODE
  InitPluginsDir
  File /oname=$PLUGINSDIR\setup-support.ps1 "setup-support.ps1"
+ File /oname=$PLUGINSDIR\routes.ps1 "${PAYLOAD_DIR}\runtime\routes.ps1"
  ${DisableX64FSRedirection}
  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\setup-support.ps1" -Action Prepare -InstallDir "$INSTDIR"'
  ${EnableX64FSRedirection}

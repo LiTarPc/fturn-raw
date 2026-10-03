@@ -19,7 +19,7 @@ func (a *App) Startup(ctx context.Context) {
 	a.mu.Unlock()
 	a.desktop.host = wailsWindow{ctx}
 	a.op.Lock()
-	_, err := a.routes(context.Background(), "Remove", 0, "full")
+	_, err := a.routes(context.Background(), "Recover", 0, "full")
 	a.op.Unlock()
 	if err != nil {
 		a.appendLog("Восстановление маршрутов: " + err.Error())

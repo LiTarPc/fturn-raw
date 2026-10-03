@@ -28,7 +28,7 @@ func command(ctx context.Context, path string, args ...string) *exec.Cmd {
 func (a *App) routes(ctx context.Context, action string, pid int, mode string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	c := command(ctx, "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", filepath.Join(runtimeDirectory(a.root), "routes.ps1"), "-Action", action, "-Mode", mode, "-OwnerPid", strconv.Itoa(os.Getpid()), "-ClientPid", strconv.Itoa(pid))
+	c := command(ctx, "powershell.exe", a.routeArgs(action, pid, mode)...)
 	c.Dir = runtimeDirectory(a.root)
 	out, err := c.CombinedOutput()
 	if err != nil {
@@ -226,11 +226,8 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 				valid = a.generation == g
 				a.mu.Unlock()
 				if valid && ctx.Err() == nil {
-					guard := command(context.Background(), "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", filepath.Join(runtimeDirectory(a.root), "routes.ps1"), "-Action", "Watch", "-Mode", p.RouteMode, "-OwnerPid", strconv.Itoa(os.Getpid()), "-ClientPid", strconv.Itoa(c.Process.Pid))
-					guard.Dir = runtimeDirectory(a.root)
-					err = guard.Start()
+					err = a.startRouteGuard(ctx, g, c.Process.Pid, p.RouteMode)
 					if err == nil {
-						go func() { _ = guard.Wait() }()
 						_, err = a.routes(ctx, "Apply", c.Process.Pid, p.RouteMode)
 					}
 				}
