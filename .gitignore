@@ -46,3 +46,8 @@ raw.key
 
 # Separate publication checkout and installer staging
 /release-work/
+
+# Global personal bypass policy and downloaded cache
+**/bypass.json
+**/ru-cidr.txt
+**/bypass-session-*.json

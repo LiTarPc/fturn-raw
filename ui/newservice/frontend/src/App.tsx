@@ -7,6 +7,7 @@ import type {Page} from './components/Sidebar';
 import {ConnectionScreen} from './components/ConnectionScreen';
 import {ProfileEditor} from './components/ProfileEditor';
 import {AppSettingsScreen} from './components/AppSettingsScreen';
+import {BypassScreen} from './components/BypassScreen';
 import {LogsScreen} from './components/LogsScreen';
 export default function App(){
  const client=useClient();
@@ -22,6 +23,7 @@ export default function App(){
    onSelect={id=>void invoke(()=>api.SelectProfile(id))} onDelete={id=>void invoke(()=>api.DeleteProfile(id))}/>}
   {page==='editor'&&<ProfileEditor key={editing?.id??'new'} entry={editing} busy={busy} running={running} invoke={invoke} setNotice={setNotice} onSaved={()=>navigate('vpn')} onBack={()=>navigate('vpn')}/>}
   {page==='settings'&&<AppSettingsScreen snapshot={snapshot} busy={busy} onChange={s=>void invoke(()=>api.SaveAppSettings(s))} onBack={()=>navigate('vpn')} onExit={()=>void invoke(()=>api.Exit())}/>}
+  {page==='bypass'&&<BypassScreen snapshot={snapshot} busy={busy} running={running} invoke={invoke} onBack={()=>navigate('vpn')}/>}
   {page==='logs'&&<LogsScreen snapshot={snapshot}/>}
  </div></div>
 }

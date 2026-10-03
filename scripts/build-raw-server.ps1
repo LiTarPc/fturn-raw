@@ -1,6 +1,6 @@
-param(
+﻿param(
  [ValidateSet('linux-amd64','linux-arm64','windows-amd64')][string[]]$Targets=@('linux-amd64','linux-arm64','windows-amd64'),
- [string]$Version='0.1.0'
+ [string]$Version='0.1.1'
 )
 $ErrorActionPreference='Stop'
 if($Version -notmatch '^\d+\.\d+\.\d+$'){throw 'Version must be major.minor.patch'}

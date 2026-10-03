@@ -69,11 +69,16 @@ func (a *App) Connect() error {
 			return fmt.Errorf("Рядом с приложением нужен %s.", name)
 		}
 	}
+	bypassPath, err := a.bypass.prepare(p.RouteMode)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.mu.Lock()
 	a.generation++
 	g := a.generation
 	a.cancel = cancel
+	a.bypassActive = bypassPath != ""
 	a.clock.transition("connecting", time.Now())
 	a.state = "connecting"
 	a.detail = "Получаем доступ к VK и создаём туннель"
@@ -82,10 +87,13 @@ func (a *App) Connect() error {
 	a.tx = 0
 	a.mu.Unlock()
 	a.publish()
-	go a.run(ctx, g, p, key)
+	go a.run(ctx, g, p, key, bypassPath)
 	return nil
 }
-func (a *App) run(ctx context.Context, g int, p Profile, key string) {
+func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string) {
+	if bypassPath != "" {
+		defer os.Remove(bypassPath)
+	}
 	var runErr error
 	defer func() {
 		a.op.Lock()
@@ -106,6 +114,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key string) {
 		a.mu.Lock()
 		a.cmd = nil
 		a.cancel = nil
+		a.bypassActive = false
 		a.ready = map[string]bool{}
 		a.mu.Unlock()
 		if runErr != nil {
@@ -138,6 +147,9 @@ func (a *App) run(ctx context.Context, g int, p Profile, key string) {
 	a.appendLog("Внешнее соединение: " + plan.Adapter + ". TCP к VK TURN.")
 	a.publish()
 	args := []string{"-peer", p.Server, "-links", p.VkLink, "-n", strconv.Itoa(p.Streams), "-transport", "tcp", "-tun", "ftraw0", "-raw-address", "10.77.0.2/24", "-raw-mtu", strconv.Itoa(p.Mtu), "-obf-profile", "rtpopus2", "-obf-key", key, "-control-interface", strconv.Itoa(plan.ControlInterface)}
+	if bypassPath != "" {
+		args = append(args, "-bypass-file", bypassPath)
+	}
 	c := command(ctx, filepath.Join(a.root, "raw-client.exe"), args...)
 	c.Dir = a.root
 	pipe, err := c.StdoutPipe()
@@ -234,6 +246,9 @@ func (a *App) run(ctx context.Context, g int, p Profile, key string) {
 				go a.stats(ctx, g)
 			}
 			label := "IPv4 и DNS через Raw; IPv6 заблокирован"
+			if bypassPath != "" {
+				label = "IPv4 через Raw с обходом; DNS через Raw; IPv6 заблокирован"
+			}
 			if p.RouteMode == "tunnel" {
 				label = "Соединение с сервером; маршруты интернета не изменены"
 			}
@@ -307,6 +322,7 @@ func (a *App) Disconnect() error {
 	c := a.cmd
 	a.cmd = nil
 	a.cancel = nil
+	a.bypassActive = false
 	a.ready = map[string]bool{}
 	a.mu.Unlock()
 	a.publish()

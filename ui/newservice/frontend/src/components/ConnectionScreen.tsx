@@ -17,7 +17,7 @@ export function ConnectionScreen({snapshot:s,busy,running,onToggle,onAdd,onEdit,
   </div>
   <div className="status-bar">
    <ProfilePicker profiles={s?.profiles??[]} activeId={s?.activeId??''} disabled={running||busy} onSelect={onSelect} onEdit={onEdit} onDelete={onDelete}/>
-   <p className="profile-caption">{s?.profile.RouteMode==='full'?'Весь IPv4 через Raw':'Только соединение с сервером'} · MTU {s?.profile.Mtu??1420}<br/>Внешнее соединение: {s?.underlay||'автоматически'}<br/>{s?.profile.RouteMode==='full'?'При подключении: IPv6 блокируется, DNS идёт через Raw.':'IPv6 и DNS работают в текущем режиме.'}</p>
+   <p className="profile-caption">{s?.profile.RouteMode==='full'?(s?.bypassActive?'IPv4 через Raw с обходом':'Весь IPv4 через Raw'):'Только соединение с сервером'} · MTU {s?.profile.Mtu??1420}<br/>Внешнее соединение: {s?.underlay||'автоматически'}<br/>{s?.profile.RouteMode==='full'?'При подключении: IPv6 блокируется, DNS идёт через Raw.':'IPv6 и DNS работают в текущем режиме.'}</p>
    {!native&&<p className="hint">Предпросмотр интерфейса. Подключение доступно в приложении Windows.</p>}
   </div>
  </main>

@@ -526,3 +526,5 @@ code {
 @media(max-height:640px){.main{min-height:510px;padding-bottom:12px}.center-area{gap:11px}.power-btn{width:115px;height:115px;border-radius:29px}.connection-timer{font-size:12px}.profile-caption{padding-bottom:4px}}
 
 .data-path{overflow-wrap:anywhere;user-select:text}
+
+.bypass-screen{gap:12px}.bypass-screen .hint{margin:0}.bypass-screen .setting-row{padding:10px 0}.bypass-rules{display:flex;flex-direction:column;gap:9px}.bypass-rules h2{font-size:12px;margin:5px 0 0;display:flex;align-items:center;gap:7px}.bypass-add{display:flex;gap:7px}.bypass-add input{min-width:0;flex:1}.bypass-add button{display:flex;align-items:center;justify-content:center;padding:8px;flex:0 0 36px}.bypass-list{list-style:none;padding:0;margin:0;border:1px solid var(--border);border-radius:10px;max-height:200px;overflow:auto}.bypass-list li{display:flex;align-items:center;justify-content:space-between;gap:5px;padding:7px 10px;min-height:39px;border-bottom:1px solid var(--border-2);font-size:11px}.bypass-list li:last-child{border-bottom:0}.bypass-list li>span{overflow-wrap:anywhere;min-width:0;user-select:text}.bypass-state{color:var(--text-2)}

@@ -3,6 +3,7 @@ module github.com/samosvalishe/free-turn-proxy
 go 1.26.6
 
 require (
+	fturnraw/bypassrules v0.0.0
 	github.com/amnezia-vpn/amneziawg-go v0.2.19
 	github.com/bogdanfinn/fhttp v0.6.8
 	github.com/bogdanfinn/tls-client v1.15.1
@@ -19,6 +20,8 @@ require (
 	golang.org/x/crypto v0.54.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260723152544-d701c51f7e4e
 	golang.org/x/net v0.57.0
+	golang.org/x/sys v0.47.0
+	gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c
 )
 
 require (
@@ -28,6 +31,7 @@ require (
 	github.com/bogdanfinn/quic-go-utls v1.0.9-utls // indirect
 	github.com/bogdanfinn/utls v1.7.7-barnius // indirect
 	github.com/bogdanfinn/websocket v1.5.5-barnius // indirect
+	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
@@ -41,7 +45,6 @@ require (
 	golang.org/x/mobile v0.0.0-20260709172247-6129f5bee9d5 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
@@ -55,3 +58,5 @@ replace github.com/xtaci/smux => ./third_party/smux
 
 // Raw exposes earlier, staggered TURN maintenance without changing legacy defaults.
 replace github.com/pion/turn/v5 => ./third_party/turn
+
+replace fturnraw/bypassrules => ./shared/bypass

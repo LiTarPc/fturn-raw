@@ -4,7 +4,7 @@ $root=Split-Path -Parent $PSScriptRoot
 $Destination=[IO.Path]::GetFullPath($Destination)
 if(Test-Path -LiteralPath $Destination){throw 'Export destination must not exist'}
 $allowedFiles=@('go.mod','go.sum','LICENSE','.gitignore','.gitattributes','ui/windows/routes.ps1','ui/windows/connection.example.json','scripts/collect-raw-licenses.ps1','scripts/build-raw-server.ps1','scripts/test-raw-server-packages.ps1','scripts/bundle-raw-wintun.ps1','scripts/build-raw.ps1','scripts/build-raw-ui.ps1','scripts/build-raw-installer.ps1','scripts/export-raw-source.ps1','scripts/test-raw-routes.ps1','scripts/test-raw-installer.ps1','scripts/test-raw-installer-support.ps1')
-$allowedDirs=@('cmd/','internal/','third_party/','ui/newservice/','installer/','scripts/debian/')
+$allowedDirs=@('shared/','cmd/','internal/','third_party/','ui/newservice/','installer/','scripts/debian/')
 Push-Location $root
 try{
  $files=@(git ls-files)

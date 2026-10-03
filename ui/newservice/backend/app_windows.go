@@ -21,6 +21,8 @@ type Profile struct {
 	RouteMode string
 }
 type Snapshot struct {
+	BypassActive   bool           `json:"bypassActive"`
+	Bypass         BypassSnapshot `json:"bypass"`
 	Profiles       []SavedProfile `json:"profiles"`
 	ActiveID       string         `json:"activeId"`
 	Profile        Profile        `json:"profile"`
@@ -54,7 +56,9 @@ type App struct {
 	generation              int
 	rx, tx                  uint64
 	clock                   connectionClock
+	bypassActive            bool
 	settings                *settingsService
+	bypass                  *bypassService
 	desktop                 *desktopController
 	startupDone             chan struct{}
 }
@@ -85,6 +89,10 @@ func newAppAt(root, dataDir string, initErr error) *App {
 	} else {
 		a.settings = &settingsService{path: filepath.Join(dataDir, "app-settings.json"), value: AppSettings{MinimizeToTray: true}, loadErr: initErr, startup: newWindowsStartup(), write: atomicSettingsWrite}
 	}
+	a.bypass = newBypassService(dataDir)
+	if initErr != nil {
+		a.bypass.loadErr = initErr
+	}
 	a.startupDone = make(chan struct{})
 	a.desktop = &desktopController{tray: &nativeTray{}, snapshot: a.GetSnapshot, settings: a.settings.get, log: a.appendLog, toggle: func() {
 		var err error
@@ -105,7 +113,11 @@ func (a *App) GetSnapshot() Snapshot {
 	a.mu.Lock()
 	snap := Snapshot{Profile: a.profile, Profiles: append([]SavedProfile{}, a.profiles...), ActiveID: a.activeID, State: a.state, Detail: a.detail, Underlay: a.underlay, Ready: len(a.ready), Logs: append([]string{}, a.logs...), RX: a.rx, TX: a.tx, ElapsedSeconds: a.clock.seconds(time.Now()), DataDir: a.dataDir}
 	a.mu.Unlock()
+	a.mu.Lock()
+	snap.BypassActive = a.bypassActive
+	a.mu.Unlock()
 	snap.Settings = a.settings.get()
+	snap.Bypass = a.bypass.snapshot()
 	snap.TrayReady = a.desktop != nil && a.desktop.ready.Load()
 	return snap
 }

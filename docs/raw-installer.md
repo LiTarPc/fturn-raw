@@ -1,9 +1,9 @@
-﻿# Windows installer (NSIS)
+# Windows installer (NSIS)
 
 The Windows x64 installer uses NSIS 3 and packages an explicit allowlist from `dist/windows-ui-newservice`. Never build a public installer from a personal `*-ready` folder. The build refuses a nonempty server, VK link or key in the bundled connection example.
 
 ```powershell
-.\scripts\build-raw-installer.ps1 -Version 0.1.0
+.\scripts\build-raw-installer.ps1 -Version 0.1.1
 ```
 
 Use `-SkipBuild` only when the public UI bundle has already been built from this source. Artifacts are `dist/fturn-raw-<version>-windows-x64-setup.exe` and the public portable ZIP. `THIRD-PARTY-NOTICES.txt` includes the license texts from modules actually used by the core/UI and the Go standard library. The Wails product version must match the installer version.

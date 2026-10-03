@@ -2,9 +2,7 @@ import {IconSettings2,IconCpu} from '@tabler/icons-react';
 import {native} from '../api';
 import type {Snapshot,AppSettings} from '../api';
 import {ScreenHeader} from './ScreenHeader';
-function Toggle({label,checked,disabled,onChange}:{label:string;checked:boolean;disabled:boolean;onChange:()=>void}){
- return <div className="setting-row"><span>{label}</span><button type="button" className={`toggle${checked?' on':''}`} role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={onChange}><span/></button></div>
-}
+import {Toggle} from './Toggle';
 export function AppSettingsScreen({snapshot:s,busy,onChange,onBack,onExit}:{snapshot?:Snapshot;busy:boolean;onChange:(s:AppSettings)=>void;onBack:()=>void;onExit:()=>void}){
  const settings=s?.settings;
  const toggle=(key:keyof AppSettings)=>{if(settings)onChange({...settings,[key]:!settings[key]})};

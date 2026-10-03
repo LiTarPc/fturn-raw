@@ -36,8 +36,12 @@ jobs:
       - name: Protocol tests
         shell: pwsh
         run: |
-          go test ./internal/rawvpn ./internal/session ./internal/config
+          go test ./internal/bypass ./internal/rawvpn ./internal/session ./internal/config
           if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
+          Push-Location shared/bypass
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Bypass rule tests failed' }
+          Pop-Location
       - name: Build installer
         shell: pwsh
         run: |

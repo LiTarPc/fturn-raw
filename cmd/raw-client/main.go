@@ -5,10 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"fturnraw/bypassrules"
+	"github.com/samosvalishe/free-turn-proxy/internal/bypass"
 	"log"
 	"net/netip"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -93,6 +96,29 @@ func run() error {
 	logger.Infof("Experimental RAW client: TUN=%s address=%s MTU=%d; default route is not changed", dev.Name(), opts.Address, opts.MTU)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if opts.BypassFile != "" {
+		f, e := os.Open(opts.BypassFile)
+		if e != nil {
+			return e
+		}
+		rules, e := bypassrules.Decode(f)
+		f.Close()
+		if e != nil {
+			return fmt.Errorf("bypass configuration: %w", e)
+		}
+		if rules.Enabled && (runtime.GOOS != "windows" || opts.ControlInterface <= 0) {
+			return errors.New("bypass requires a selected Windows control interface")
+		}
+		wrapped, e := bypass.Wrap(ctx, dev, rules, prefix.Addr(), opts.MTU, rawvpn.ControlResolver())
+		if e != nil {
+			return e
+		}
+		defer wrapped.Close()
+		dev = wrapped
+		if rules.Enabled {
+			logger.Infof("[BYPASS] IPv4 TCP/UDP: %d site rules, %d app rules, %d CIDRs; DNS remains Raw", len(rules.Sites), len(rules.Apps), len(rules.CIDRs))
+		}
+	}
 	return session.RunRaw(ctx, cfg, dev, prefix.Addr(), opts.MTU, logger)
 }
 
@@ -110,6 +136,7 @@ Usage:
   -raw-address cidr      Client IPv4 interface (default 10.77.0.2/24)
   -raw-mtu bytes         IP MTU 576..1500 (default 1280); must match server
   -control-interface n   Bind VK/TURN/DNS to a Windows adapter index
+  -bypass-file path      Versioned global IPv4 bypass configuration (Windows)
   -n count               Streams per VK link (default 10, max 64 total)
   -transport name        TCP to TURN (default tcp), or udp
   -streams-per-cred n    Streams per VK credential cache (default 5)

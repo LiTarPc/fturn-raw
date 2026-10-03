@@ -43,7 +43,7 @@ Source: https://github.com/LiTarPc/fturn-raw
 ## Build / validate
 
 ```powershell
-.\scripts\build-raw-server.ps1 -Version 0.1.0
+.\scripts\build-raw-server.ps1 -Version 0.1.1
 .\scripts\test-raw-server-packages.ps1
 ```
 
