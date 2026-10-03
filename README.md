@@ -1,4 +1,4 @@
-# fturn Raw
+# FturnRaw
 
 Raw IPv4-туннель через TURN мессенджера. Клиент для Windows 10/11 x64; серверы для Linux amd64/arm64 и Windows x64.
 
