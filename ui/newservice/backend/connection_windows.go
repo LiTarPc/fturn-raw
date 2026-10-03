@@ -69,7 +69,7 @@ func (a *App) Connect() error {
 	}
 	for _, name := range []string{"raw-client.exe", "wintun.dll", "routes.ps1"} {
 		if _, err = os.Stat(filepath.Join(runtimeDirectory(a.root), name)); err != nil {
-			return fmt.Errorf("Р СЏРґРѕРј СЃ РїСЂРёР»РѕР¶РµРЅРёРµРј РЅСѓР¶РµРЅ %s.", name)
+			return fmt.Errorf("Рядом с приложением нужен %s.", name)
 		}
 	}
 	bypassPath, err := a.bypass.prepare(p.RouteMode)
@@ -84,7 +84,7 @@ func (a *App) Connect() error {
 	a.bypassActive = bypassPath != ""
 	a.clock.transition("connecting", time.Now())
 	a.state = "connecting"
-	a.detail = "РџРѕР»СѓС‡Р°РµРј РґРѕСЃС‚СѓРї Рє VK Рё СЃРѕР·РґР°С‘Рј С‚СѓРЅРЅРµР»СЊ"
+	a.detail = "Получаем доступ к VK и создаём туннель"
 	a.ready = map[string]bool{}
 	a.rx = 0
 	a.tx = 0
@@ -112,7 +112,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 			cancel()
 		}
 		if _, err := a.routes(context.Background(), "Remove", 0, p.RouteMode); err != nil {
-			runErr = errors.Join(runErr, fmt.Errorf("РќРµ СѓРґР°Р»РѕСЃСЊ РІРѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ СЃРµС‚РµРІС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё: %w", err))
+			runErr = errors.Join(runErr, fmt.Errorf("Не удалось восстановить сетевые настройки: %w", err))
 		}
 		a.mu.Lock()
 		a.cmd = nil
@@ -124,7 +124,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 			a.appendLog(runErr.Error())
 			a.setState(g, "error", runErr.Error())
 		} else {
-			a.setState(g, "idle", "Р“РѕС‚РѕРІ Рє РїРѕРґРєР»СЋС‡РµРЅРёСЋ")
+			a.setState(g, "idle", "Готов к подключению")
 		}
 	}()
 	planData, err := a.routes(ctx, "Plan", 0, p.RouteMode)
@@ -137,7 +137,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 		Adapter          string `json:"adapter"`
 	}
 	if err = json.Unmarshal([]byte(planData), &plan); err != nil || plan.ControlInterface <= 0 {
-		runErr = fmt.Errorf("РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹Р±СЂР°С‚СЊ РІРЅРµС€РЅРµРµ СЃРѕРµРґРёРЅРµРЅРёРµ: %s", planData)
+		runErr = fmt.Errorf("Не удалось выбрать внешнее соединение: %s", planData)
 		return
 	}
 	a.mu.Lock()
@@ -147,7 +147,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 	}
 	a.underlay = plan.Adapter
 	a.mu.Unlock()
-	a.appendLog("Р’РЅРµС€РЅРµРµ СЃРѕРµРґРёРЅРµРЅРёРµ: " + plan.Adapter + ". TCP Рє VK TURN.")
+	a.appendLog("Внешнее соединение: " + plan.Adapter + ". TCP к VK TURN.")
 	a.publish()
 	args := rawClientArgs(p, key, plan.ControlInterface, a.dataDir, bypassPath)
 	c := command(ctx, filepath.Join(runtimeDirectory(a.root), "raw-client.exe"), args...)
@@ -242,26 +242,19 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 				}
 				applied = true
 				if p.RouteMode == "full" {
-					a.appendLog("Р—Р°С‰РёС‚Р° РІРєР»СЋС‡РµРЅР°: IPv6 Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ, DNS РІРЅРµ Raw Р·Р°РїСЂРµС‰С‘РЅ.")
+					a.appendLog("Защита включена: IPv6 заблокирован, DNS вне Raw запрещён.")
 				}
 				once.Do(func() { close(readySignal) })
 				go a.stats(ctx, g)
 			}
-			label := "IPv4 Рё DNS С‡РµСЂРµР· Raw; IPv6 Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ"
-			if bypassPath != "" {
-				label = "IPv4 С‡РµСЂРµР· Raw СЃ РѕР±С…РѕРґРѕРј; DNS С‡РµСЂРµР· Raw; IPv6 Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ"
-			}
-			if p.RouteMode == "tunnel" {
-				label = "РЎРѕРµРґРёРЅРµРЅРёРµ СЃ СЃРµСЂРІРµСЂРѕРј; РјР°СЂС€СЂСѓС‚С‹ РёРЅС‚РµСЂРЅРµС‚Р° РЅРµ РёР·РјРµРЅРµРЅС‹"
-			}
-			a.setState(g, "connected", label+" В· TCP В· MTU "+strconv.Itoa(p.Mtu))
+			a.setState(g, "connected", "Подключён")
 		} else if match := retryRE.FindStringSubmatch(line); match != nil {
 			a.mu.Lock()
 			delete(a.ready, match[1])
 			count := len(a.ready)
 			a.mu.Unlock()
 			if applied && count == 0 {
-				a.setState(g, "reconnecting", "РЎРІСЏР·СЊ РїРѕС‚РµСЂСЏРЅР°, РїРѕРІС‚РѕСЂСЏРµРј РїРѕРґРєР»СЋС‡РµРЅРёРµ. РњРѕР¶РЅРѕ РѕС‚РєР»СЋС‡РёС‚СЊ Raw.")
+				a.setState(g, "reconnecting", "Связь потеряна, повторяем подключение. Можно отключить Raw.")
 			}
 		}
 	}
@@ -278,7 +271,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 	timeout := timedOut
 	timerMu.Unlock()
 	if timeout {
-		runErr = errors.New("РўР°Р№РјР°СѓС‚: TCP Рє VK TURN РЅРµРґРѕСЃС‚СѓРїРµРЅ С‡РµСЂРµР· РІС‹Р±СЂР°РЅРЅРѕРµ СЃРѕРµРґРёРЅРµРЅРёРµ.")
+		runErr = errors.New("Таймаут: TCP к VK TURN недоступен через выбранное соединение.")
 	}
 	if runErr != nil && ctx.Err() == nil {
 		if until := authRetryAt(a.dataDir, time.Now()); until > 0 {
@@ -330,7 +323,7 @@ func (a *App) Disconnect() error {
 	a.generation++
 	a.clock.transition("stopping", time.Now())
 	a.state = "stopping"
-	a.detail = "Р’РѕСЃСЃС‚Р°РЅР°РІР»РёРІР°РµРј РїСЂРµР¶РЅРµРµ СЃРѕРµРґРёРЅРµРЅРёРµ"
+	a.detail = "Восстанавливаем прежнее соединение"
 	c := a.cmd
 	a.cmd = nil
 	a.cancel = nil
@@ -344,10 +337,10 @@ func (a *App) Disconnect() error {
 	_, err := a.routes(context.Background(), "Remove", 0, "full")
 	a.mu.Lock()
 	a.state = "idle"
-	a.detail = "Р“РѕС‚РѕРІ Рє РїРѕРґРєР»СЋС‡РµРЅРёСЋ"
+	a.detail = "Готов к подключению"
 	if err != nil {
 		a.state = "error"
-		a.detail = "РќРµ СѓРґР°Р»РѕСЃСЊ РІРѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ РјР°СЂС€СЂСѓС‚С‹: " + err.Error()
+		a.detail = "Не удалось восстановить маршруты: " + err.Error()
 	}
 	a.mu.Unlock()
 	a.publish()

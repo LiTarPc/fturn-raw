@@ -14,7 +14,8 @@ export function ConnectionScreen({snapshot:s,busy,running,onToggle,onAdd,onEdit,
   <div className="center-area">
    <button className={`power-btn${s?.state==='connected'?' power-btn--active':''}${waiting?' power-btn--spinning':''}`} disabled={busy||s?.state==='stopping'||!s||(!running&&authPaused)} onClick={onToggle} title={running?'Отключить':'Подключить'} aria-label={running?'Отключить':'Подключить'}>{waiting?<IconLoader2 size={48} className="power-icon--spinning"/>:<IconPower size={48}/>}</button>
    <div className="connection-status"><span className={`tunnel-label${s?.state==='error'?' error':''}`}>{labels[s?.state??'idle']}</span><time className="connection-timer" aria-label="Время активного подключения">{duration(s?.elapsedSeconds??0)}</time></div>
-   <p className="connection-detail">{s?.detail??'Загрузка профиля…'}{running&&<><br/>Потоки: {s?.ready??0}/{s?.profile.Streams??0}</>}</p>
+   {s?.state!=='connected'&&<p className="connection-detail">{s?.detail??'Загрузка профиля…'}</p>}
+   {running&&<p className="connection-detail">Потоки: {s?.ready??0}/{s?.profile.Streams??0}</p>}
    {authPaused&&<p className="connection-detail" role="status">VK ограничил попытки капчи. Пауза клиента до {retryTime}. Ограничение VK может действовать дольше.</p>}
    <div className="stats-card"><div className="stats-col"><span className="stats-label">Принято</span><span className="stats-value">{bytes(s?.rx??0)}</span></div><div className="stats-divider"/><div className="stats-col"><span className="stats-label">Отправлено</span><span className="stats-value">{bytes(s?.tx??0)}</span></div></div>
   </div>

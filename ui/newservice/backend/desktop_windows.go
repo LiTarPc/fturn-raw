@@ -61,13 +61,11 @@ func (d *desktopController) start() {
 			d.checkMinimize()
 			if ticks%4 == 0 {
 				s := d.snapshot()
-				label := map[string]string{"idle": "Отключён", "connected": "Подключён", "connecting": "Подключение", "reconnecting": "Переподключение", "error": "Ошибка", "stopping": "Отключение"}[s.State]
 				action := "Подключить"
 				if connectionRunning(s.State) {
 					action = "Отключить"
 				}
-				seconds := s.ElapsedSeconds
-				d.tray.Update(fmt.Sprintf("fturn Raw · %s · %02d:%02d:%02d", label, seconds/3600, (seconds/60)%60, seconds%60), action, s.State != "stopping")
+				d.tray.Update(trayTooltip(s), action, s.State != "stopping")
 			}
 		}
 	}()
@@ -110,4 +108,14 @@ func (d *desktopController) hideWhenReady() {
 	if d.ready.Load() {
 		d.beforeClose()
 	}
+}
+
+func trayTooltip(s Snapshot) string {
+	label := map[string]string{"idle": "Отключён", "connected": "Подключён", "connecting": "Подключение", "reconnecting": "Переподключение", "error": "Ошибка", "stopping": "Отключение"}[s.State]
+	seconds := s.ElapsedSeconds
+	text := fmt.Sprintf("fturn Raw · %s · %02d:%02d:%02d", label, seconds/3600, (seconds/60)%60, seconds%60)
+	if connectionRunning(s.State) {
+		text += fmt.Sprintf(" · Потоки: %d/%d", s.Ready, s.Profile.Streams)
+	}
+	return text
 }
