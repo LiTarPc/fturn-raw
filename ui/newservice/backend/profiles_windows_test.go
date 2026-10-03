@@ -9,7 +9,7 @@ import (
 )
 
 func testProfile(host, key string) Profile {
-	return Profile{Server: host + ":56010", VkLink: "https://vk.ru/call/join/test", Key: strings.Repeat(key, 32), Mtu: 1420, Streams: 10, RouteMode: "full"}
+	return Profile{Server: host + ":56010", VkLink: "https://vk.ru/call/join/test", Key: strings.Repeat(key, 32), Mtu: 1420, Streams: 10, StreamsPerCred: defaultStreamsPerCred, RouteMode: "full"}
 }
 func TestProfilesMigrateImportSelectRestart(t *testing.T) {
 	root := t.TempDir()

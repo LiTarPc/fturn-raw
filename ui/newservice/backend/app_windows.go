@@ -12,13 +12,14 @@ import (
 )
 
 type Profile struct {
-	Server    string
-	VkLink    string
-	Key       string
-	KeyFile   string `json:",omitempty"`
-	Mtu       int
-	Streams   int
-	RouteMode string
+	Server         string
+	VkLink         string
+	Key            string
+	KeyFile        string `json:",omitempty"`
+	Mtu            int
+	Streams        int
+	StreamsPerCred int
+	RouteMode      string
 }
 type Snapshot struct {
 	AuthRetryAt    int64          `json:"authRetryAt"`
@@ -74,7 +75,7 @@ func NewApp() *App {
 func newApp(root string) *App                  { return newAppWithData(root, root) }
 func newAppWithData(root, dataDir string) *App { return newAppAt(root, dataDir, nil) }
 func newAppAt(root, dataDir string, initErr error) *App {
-	a := &App{root: root, dataDir: dataDir, profile: Profile{KeyFile: "raw.key", Mtu: 1420, Streams: 10, RouteMode: "full"}, state: "idle", detail: "Готов к подключению", ready: map[string]bool{}, logs: []string{}}
+	a := &App{root: root, dataDir: dataDir, profile: Profile{KeyFile: "raw.key", Mtu: 1420, Streams: 10, StreamsPerCred: defaultStreamsPerCred, RouteMode: "full"}, state: "idle", detail: "Готов к подключению", ready: map[string]bool{}, logs: []string{}}
 	if initErr == nil {
 		initErr = migrateUserData(root, dataDir)
 	}

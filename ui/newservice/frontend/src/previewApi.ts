@@ -1,5 +1,5 @@
 import type {Backend,SavedProfile,Snapshot} from './types';
-const profiles: SavedProfile[] = ['192.0.2.1','198.51.100.2'].map((host,i)=>({id:String(i),name:i?'Второй сервер':'Основной сервер',profile:{Server:host+':56010',VkLink:'https://vk.ru/call/join/demo',Key:'ab'.repeat(32),Mtu:1420,Streams:10,RouteMode:'full'}}));
+const profiles: SavedProfile[] = ['192.0.2.1','198.51.100.2'].map((host,i)=>({id:String(i),name:i?'Второй сервер':'Основной сервер',profile:{Server:host+':56010',VkLink:'https://vk.ru/call/join/demo',Key:'ab'.repeat(32),Mtu:1420,Streams:10,StreamsPerCred:5,RouteMode:'full'}}));
 const demo: Snapshot = { authRetryAt:0, bypassActive:false, bypass:{settings:{enabled:false,ru:false,sites:[],apps:[]},ruCount:8652,ruUpdated:"2026-10-03 · встроенный",error:""}, dataDir:"%LOCALAPPDATA%\\fturn-raw", elapsedSeconds:0,settings:{minimizeToTray:true,startWithWindows:false,autoConnect:false},trayReady:false, profile:profiles[0].profile,profiles,activeId:'0', state:'idle', detail:'Готов к подключению', underlay:'Автоматически: текущий VPN / Ethernet / Wi-Fi', ready:0, logs:[],rx:0,tx:0 };
 const unavailable = async (): Promise<never> => { throw new Error('Действие доступно в приложении Windows.'); };
 export const previewApi: Backend = {

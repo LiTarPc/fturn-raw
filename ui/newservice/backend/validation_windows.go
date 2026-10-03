@@ -12,6 +12,7 @@ import (
 )
 
 func validateFields(p Profile) error {
+	p = profileDefaults(p)
 	host, port, err := net.SplitHostPort(p.Server)
 	if err != nil || net.ParseIP(host) == nil || net.ParseIP(host).To4() == nil {
 		return errors.New("Укажите IPv4:порт сервера.")
@@ -29,6 +30,9 @@ func validateFields(p Profile) error {
 	}
 	if p.Streams < 1 || p.Streams > 64 {
 		return errors.New("Количество потоков должно быть от 1 до 64.")
+	}
+	if p.StreamsPerCred < 1 || p.StreamsPerCred > 64 {
+		return errors.New("Потоков на реквизиты VK должно быть от 1 до 64.")
 	}
 	if p.RouteMode != "full" && p.RouteMode != "tunnel" {
 		return errors.New("Неизвестный режим трафика.")

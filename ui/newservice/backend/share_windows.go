@@ -17,13 +17,14 @@ const maxShareLength = 16 * 1024
 
 // Separate wire format deliberately excludes local file paths and future fields.
 type sharedProfile struct {
-	Version   int    `json:"v"`
-	Server    string `json:"server"`
-	VkLink    string `json:"vk"`
-	Key       string `json:"key"`
-	Mtu       int    `json:"mtu"`
-	Streams   int    `json:"streams"`
-	RouteMode string `json:"mode"`
+	Version        int    `json:"v"`
+	Server         string `json:"server"`
+	VkLink         string `json:"vk"`
+	Key            string `json:"key"`
+	Mtu            int    `json:"mtu"`
+	Streams        int    `json:"streams"`
+	StreamsPerCred int    `json:"streamsPerCred,omitempty"`
+	RouteMode      string `json:"mode"`
 }
 
 func decodeShare(link string) (Profile, []byte, error) {
@@ -45,10 +46,10 @@ func decodeShare(link string) (Profile, []byte, error) {
 		return fail()
 	}
 	var extra any
-	if decoder.Decode(&extra) != io.EOF || wire.Version != 1 {
+	if decoder.Decode(&extra) != io.EOF || (wire.Version != 1 && wire.Version != 2) || (wire.Version == 1 && wire.StreamsPerCred != 0) || (wire.Version == 2 && (wire.StreamsPerCred < 1 || wire.StreamsPerCred > 64)) {
 		return fail()
 	}
-	p := Profile{Server: wire.Server, VkLink: wire.VkLink, Mtu: wire.Mtu, Streams: wire.Streams, RouteMode: wire.RouteMode}
+	p := profileDefaults(Profile{Server: wire.Server, VkLink: wire.VkLink, Mtu: wire.Mtu, Streams: wire.Streams, StreamsPerCred: wire.StreamsPerCred, RouteMode: wire.RouteMode})
 	if err := validateFields(p); err != nil {
 		return Profile{}, nil, err
 	}
@@ -63,11 +64,16 @@ func decodeShare(link string) (Profile, []byte, error) {
 // The result contains the actual key so it is portable to another computer.
 // Never log, fetch or open this private configuration as a web URL.
 func (a *App) ExportProfile(p Profile) (string, error) {
+	p = profileDefaults(p)
 	key, err := validate(p, a.root)
 	if err != nil {
 		return "", err
 	}
-	wire := sharedProfile{1, p.Server, p.VkLink, key, p.Mtu, p.Streams, p.RouteMode}
+	wire := sharedProfile{Version: 1, Server: p.Server, VkLink: p.VkLink, Key: key, Mtu: p.Mtu, Streams: p.Streams, RouteMode: p.RouteMode}
+	if p.StreamsPerCred != defaultStreamsPerCred {
+		wire.Version = 2
+		wire.StreamsPerCred = p.StreamsPerCred
+	}
 	data, err := json.Marshal(wire)
 	if err != nil {
 		return "", err

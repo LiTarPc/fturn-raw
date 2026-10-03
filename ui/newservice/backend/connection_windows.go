@@ -149,10 +149,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 	a.mu.Unlock()
 	a.appendLog("Р’РЅРµС€РЅРµРµ СЃРѕРµРґРёРЅРµРЅРёРµ: " + plan.Adapter + ". TCP Рє VK TURN.")
 	a.publish()
-	args := []string{"-state-dir", coreStateDirectory(a.dataDir), "-peer", p.Server, "-links", p.VkLink, "-n", strconv.Itoa(p.Streams), "-transport", "tcp", "-tun", "ftraw0", "-raw-address", "10.77.0.2/24", "-raw-mtu", strconv.Itoa(p.Mtu), "-obf-profile", "rtpopus2", "-obf-key", key, "-control-interface", strconv.Itoa(plan.ControlInterface)}
-	if bypassPath != "" {
-		args = append(args, "-bypass-file", bypassPath)
-	}
+	args := rawClientArgs(p, key, plan.ControlInterface, a.dataDir, bypassPath)
 	c := command(ctx, filepath.Join(runtimeDirectory(a.root), "raw-client.exe"), args...)
 	c.Dir = runtimeDirectory(a.root)
 	pipe, err := c.StdoutPipe()
@@ -358,4 +355,13 @@ func (a *App) Disconnect() error {
 	a.mu.Unlock()
 	a.publish()
 	return err
+}
+
+func rawClientArgs(p Profile, key string, controlInterface int, dataDir, bypassPath string) []string {
+	p = profileDefaults(p)
+	args := []string{"-state-dir", coreStateDirectory(dataDir), "-peer", p.Server, "-links", p.VkLink, "-n", strconv.Itoa(p.Streams), "-streams-per-cred", strconv.Itoa(p.StreamsPerCred), "-transport", "tcp", "-tun", "ftraw0", "-raw-address", "10.77.0.2/24", "-raw-mtu", strconv.Itoa(p.Mtu), "-obf-profile", "rtpopus2", "-obf-key", key, "-control-interface", strconv.Itoa(controlInterface)}
+	if bypassPath != "" {
+		args = append(args, "-bypass-file", bypassPath)
+	}
+	return args
 }

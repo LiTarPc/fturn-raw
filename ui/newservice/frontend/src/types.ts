@@ -1,4 +1,4 @@
-export interface Profile { Server: string; VkLink: string; Key: string; KeyFile?: string; Mtu: number; Streams: number; RouteMode: string }
+export interface Profile { Server: string; VkLink: string; Key: string; KeyFile?: string; Mtu: number; Streams: number; StreamsPerCred: number; RouteMode: string }
 export interface SavedProfile { id: string; name: string; profile: Profile }
 export interface AppSettings {minimizeToTray:boolean;startWithWindows:boolean;autoConnect:boolean}
 export interface Snapshot { authRetryAt:number; bypass:BypassSnapshot; bypassActive:boolean; dataDir:string; elapsedSeconds:number; settings:AppSettings; trayReady:boolean; profile: Profile; profiles: SavedProfile[]; activeId: string; state: string; detail: string; underlay: string; ready: number; logs: string[]; rx: number; tx: number }

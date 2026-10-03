@@ -77,6 +77,7 @@ func (a *App) loadProfiles() {
 		a.detail = a.storageErr.Error()
 		return
 	}
+	a.profile = profileDefaults(a.profile)
 	// A blank public example is not a saved connection.
 	if a.profile.Server == "" {
 		return
@@ -188,6 +189,7 @@ func (a *App) saveNamedProfile(p Profile, name string, create bool) error {
 	if err := check(); err != nil {
 		return err
 	}
+	p = profileDefaults(p)
 	p.Server = strings.TrimSpace(p.Server)
 	p.VkLink = strings.TrimSpace(p.VkLink)
 	key, err := validate(p, a.root)
@@ -274,7 +276,12 @@ func decodeProfileBook(data []byte) (profileBook, error) {
 	invalid := json.Unmarshal(data, &book) != nil || book.Version != 1 || len(book.Profiles) == 0 || len(book.Profiles) > 128
 	seen := map[string]bool{}
 	found := false
-	for _, p := range book.Profiles {
+	for i := range book.Profiles {
+		book.Profiles[i].Profile = profileDefaults(book.Profiles[i].Profile)
+		p := book.Profiles[i]
+		if p.Profile.StreamsPerCred < 1 || p.Profile.StreamsPerCred > 64 {
+			invalid = true
+		}
 		if p.ID == "" || seen[p.ID] || !validName(p.Name) {
 			invalid = true
 		}
