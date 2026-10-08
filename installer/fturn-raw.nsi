@@ -1,10 +1,10 @@
-﻿Unicode true
+Unicode true
 !include "MUI2.nsh"
 !include "x64.nsh"
 !include "WinVer.nsh"
 !include "LogicLib.nsh"
 !ifndef VERSION
- !define VERSION "0.1.5"
+ !define VERSION "0.1.6"
 !endif
 !ifndef PAYLOAD_DIR
  !error "PAYLOAD_DIR is required"

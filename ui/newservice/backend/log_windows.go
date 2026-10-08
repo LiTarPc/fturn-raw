@@ -35,3 +35,11 @@ func (a *App) appendLog(line string) {
 		_ = f.Close()
 	}
 }
+
+// UI failures have explicit severity just like core logs; never infer it from text.
+func (a *App) appendErrorLog(line string) {
+	line = strings.TrimSpace(line)
+	if line != "" {
+		a.appendLog("[ERROR] " + line)
+	}
+}

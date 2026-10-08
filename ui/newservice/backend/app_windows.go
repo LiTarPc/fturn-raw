@@ -100,7 +100,7 @@ func newAppAt(root, dataDir string, initErr error) *App {
 	}
 	if initErr == nil && a.storageErr == nil {
 		if err := archiveLegacyData(root, dataDir); err != nil {
-			a.appendLog("Не удалось архивировать старые файлы: " + err.Error())
+			a.appendErrorLog("Не удалось архивировать старые файлы: " + err.Error())
 		}
 	}
 	a.startupDone = make(chan struct{})
@@ -112,7 +112,7 @@ func newAppAt(root, dataDir string, initErr error) *App {
 			err = a.Connect()
 		}
 		if err != nil {
-			a.appendLog(err.Error())
+			a.appendErrorLog(err.Error())
 			a.desktop.show()
 			a.publish()
 		}

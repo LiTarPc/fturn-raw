@@ -22,15 +22,15 @@ func (a *App) Startup(ctx context.Context) {
 	_, err := a.routes(context.Background(), "Recover", 0, "full")
 	a.op.Unlock()
 	if err != nil {
-		a.appendLog("Восстановление маршрутов: " + err.Error())
+		a.appendErrorLog("Восстановление маршрутов: " + err.Error())
 		a.setState(0, "error", err.Error())
 	}
 	if a.settings.loadErr != nil {
-		a.appendLog(a.settings.loadErr.Error())
+		a.appendErrorLog(a.settings.loadErr.Error())
 	}
 	if a.settings.get().StartWithWindows && a.settings.loadErr == nil {
 		if err := a.settings.startup.SetEnabled(true); err != nil {
-			a.appendLog("Обновление пути автозапуска: " + err.Error())
+			a.appendErrorLog("Обновление пути автозапуска: " + err.Error())
 		}
 	}
 	a.desktop.start()
@@ -49,7 +49,7 @@ func (a *App) DomReady(ctx context.Context) {
 	}
 	if s.AutoConnect && a.storageErr == nil && a.settings.loadErr == nil && a.GetSnapshot().State != "error" {
 		if err := a.Connect(); err != nil {
-			a.appendLog("Авто-подключение: " + err.Error())
+			a.appendErrorLog("Авто-подключение: " + err.Error())
 			a.desktop.show()
 			a.publish()
 		}

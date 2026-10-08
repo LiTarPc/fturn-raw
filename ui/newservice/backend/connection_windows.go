@@ -121,7 +121,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 		a.ready = map[string]bool{}
 		a.mu.Unlock()
 		if runErr != nil {
-			a.appendLog(runErr.Error())
+			a.appendErrorLog(runErr.Error())
 			a.setState(g, "error", runErr.Error())
 		} else {
 			a.setState(g, "idle", "Готов к подключению")

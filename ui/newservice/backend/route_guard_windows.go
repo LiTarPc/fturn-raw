@@ -64,7 +64,7 @@ func (a *App) startRouteGuard(ctx context.Context, g, pid int, mode string) erro
 		current := a.generation == g
 		a.mu.Unlock()
 		if current && cancel != nil {
-			a.appendLog("Network recovery guard stopped unexpectedly; disconnecting Raw")
+			a.appendErrorLog("Network recovery guard stopped unexpectedly; disconnecting Raw")
 			cancel()
 		}
 	}()
