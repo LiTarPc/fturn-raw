@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,19 +49,24 @@ func controlDoHUpstream(name, address string) controlDNSUpstream {
 	transport := &http.Transport{
 		Proxy: nil, ForceAttemptHTTP2: true,
 		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12, ServerName: "cloudflare-dns.com"},
-		TLSHandshakeTimeout: time.Second, ResponseHeaderTimeout: 1500 * time.Millisecond,
+		TLSHandshakeTimeout: 4 * time.Second, ResponseHeaderTimeout: 4 * time.Second,
 		IdleConnTimeout: 60 * time.Second, MaxIdleConns: 4,
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp4", address)
 		},
 	}
-	client := &http.Client{Transport: transport, Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Transport: transport, Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return controlDNSUpstream{name: name, client: client, endpoint: "https://cloudflare-dns.com/dns-query"}
 }
 func newControlDNSResolver(client *http.Client, endpoint string) *net.Resolver {
 	return resolverForControlDNS(newControlDNSPool([]controlDNSUpstream{{name: "custom", client: client, endpoint: endpoint}}))
 }
-func resolverForControlDNS(pool *controlDNSPool) *net.Resolver {
+
+type controlDNSExchanger interface {
+	exchange(context.Context, []byte) ([]byte, error)
+}
+
+func resolverForControlDNS(pool controlDNSExchanger) *net.Resolver {
 	return &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		queryCtx, cancel := context.WithCancel(ctx)
 		caller, worker := net.Pipe()
@@ -103,7 +109,9 @@ func (c *controlDNSConn) Close() error { c.cancel(); return c.Conn.Close() }
 
 type controlDNSError struct{ cause error }
 
-func (e *controlDNSError) Error() string   { return "raw service DNS: " + e.cause.Error() }
+func (e *controlDNSError) Error() string {
+	return "raw service DNS: " + strings.ReplaceAll(e.cause.Error(), "\n", "; ")
+}
 func (e *controlDNSError) Unwrap() error   { return e.cause }
 func (e *controlDNSError) Temporary() bool { return true }
 func (e *controlDNSError) Timeout() bool {
@@ -116,7 +124,7 @@ func (e *controlDNSError) Timeout() bool {
 func serveControlDNS(ctx context.Context, conn net.Conn, client *http.Client, endpoint string) error {
 	return serveControlDNSPool(ctx, conn, newControlDNSPool([]controlDNSUpstream{{name: "custom", client: client, endpoint: endpoint}}))
 }
-func serveControlDNSPool(ctx context.Context, conn net.Conn, pool *controlDNSPool) error {
+func serveControlDNSPool(ctx context.Context, conn net.Conn, pool controlDNSExchanger) error {
 	var prefix [2]byte
 	if _, err := io.ReadFull(conn, prefix[:]); err != nil {
 		return err

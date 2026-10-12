@@ -13,7 +13,10 @@ import (
 )
 
 func (a *App) routeArgs(action string, pid int, mode string) []string {
-	return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", filepath.Join(runtimeDirectory(a.root), "routes.ps1"), "-Action", action, "-Mode", mode, "-StateFile", filepath.Join(a.dataDir, "network", "route-state.json"), "-LegacyDirectory", runtimeDirectory(a.root), "-OwnerPid", strconv.Itoa(os.Getpid()), "-ClientPid", strconv.Itoa(pid)}
+	a.mu.Lock()
+	port := a.controlDNSPort
+	a.mu.Unlock()
+	return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", filepath.Join(runtimeDirectory(a.root), "routes.ps1"), "-Action", action, "-Mode", mode, "-StateFile", filepath.Join(a.dataDir, "network", "route-state.json"), "-LegacyDirectory", runtimeDirectory(a.root), "-OwnerPid", strconv.Itoa(os.Getpid()), "-ClientPid", strconv.Itoa(pid), "-ServiceDNSPort", strconv.Itoa(port)}
 }
 
 func readGuardReady(r io.Reader) error {

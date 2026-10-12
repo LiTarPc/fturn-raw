@@ -1,6 +1,7 @@
 ﻿param([switch]$SkipGoBuild)
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
+$productVersion=(Get-Content -LiteralPath (Join-Path $projectRoot 'ui/newservice/wails.json') -Raw | ConvertFrom-Json).info.productVersion
 $oldArch=$env:GOARCH;$oldCGO=$env:CGO_ENABLED;$oldOS=$env:GOOS
 Push-Location $projectRoot
 try {
@@ -8,7 +9,7 @@ try {
  if(-not $SkipGoBuild){
   $coreDir=Join-Path $projectRoot 'dist/windows-amd64'
   New-Item -ItemType Directory -Path $coreDir -Force | Out-Null
-  go build -trimpath -ldflags '-s -w' -o (Join-Path $coreDir 'raw-client.exe') ./cmd/raw-client
+  go build -trimpath -ldflags ("-s -w -X github.com/samosvalishe/free-turn-proxy/internal/buildinfo.Version="+$productVersion) -o (Join-Path $coreDir 'raw-client.exe') ./cmd/raw-client
   if($LASTEXITCODE -ne 0){throw 'Raw client build failed'}
   & (Join-Path $PSScriptRoot 'bundle-raw-wintun.ps1') -OutputDir $coreDir
  }
@@ -20,7 +21,7 @@ try {
  try {
   go test ./backend
   if($LASTEXITCODE -ne 0){throw 'UI backend tests failed'}
-  wails build -platform windows/amd64 -clean
+  wails build -platform windows/amd64 -clean -ldflags ("-X fturnrawui/backend.Version="+$productVersion)
   if($LASTEXITCODE -ne 0){throw 'Wails UI build failed'}
  }finally{Pop-Location}
  $outputDir=Join-Path $projectRoot 'dist/windows-ui-clean'

@@ -14,6 +14,7 @@ func (w wailsWindow) Minimized() bool { return runtime.WindowIsMinimised(w.ctx) 
 func (w wailsWindow) Quit()           { runtime.Quit(w.ctx) }
 func (a *App) Startup(ctx context.Context) {
 	defer close(a.startupDone)
+	a.appendVersionLog("startup")
 	a.mu.Lock()
 	a.ctx = ctx
 	a.mu.Unlock()

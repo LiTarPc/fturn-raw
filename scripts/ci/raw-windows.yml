@@ -56,6 +56,9 @@ jobs:
           go test ./...
           if ($LASTEXITCODE -ne 0) { throw 'Bypass rule tests failed' }
           Pop-Location
+      - name: Native DNS firewall filter checks
+        shell: pwsh
+        run: ./scripts/test-raw-dns-firewall-native.ps1
       - name: Build installer
         shell: pwsh
         run: |

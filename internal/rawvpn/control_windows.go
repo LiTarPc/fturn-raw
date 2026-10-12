@@ -19,7 +19,7 @@ var rawControlResolver atomic.Pointer[net.Resolver]
 // Keep it separately because shared session startup can replace DefaultResolver.
 func ControlResolver() *net.Resolver { return rawControlResolver.Load() }
 
-// BindControlInterface keeps VK/TURN sockets and encrypted service DNS on the underlay.
+// BindControlInterface keeps VK/TURN sockets and service DNS on the underlay.
 // Only this raw-client process is affected; application sockets are untouched.
 func BindControlInterface(index int) error {
 	if index == 0 {
@@ -56,7 +56,10 @@ func BindControlInterface(index int) error {
 		}
 		return sockErr
 	})
-	resolver := controlDNSResolver()
+	resolver, err := selectedDNSResolver(index)
+	if err != nil {
+		return err
+	}
 	rawControlResolver.Store(resolver)
 	net.DefaultResolver = resolver
 	return nil

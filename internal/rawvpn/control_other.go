@@ -18,3 +18,8 @@ func BindControlInterface(index int) error {
 func ControlResolver() *net.Resolver { return nil }
 
 func SetControlDNSLogger(logx.Logger) {}
+
+func ControlDNSPort() int           { return 0 }
+func CloseControlDNS()              {}
+func ControlDNSDescription() string { return "system DNS" }
+func BypassResolver() *net.Resolver { return nil }

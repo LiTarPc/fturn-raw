@@ -18,6 +18,8 @@ import (
 )
 
 var readyRE = regexp.MustCompile(`RAW stream (\d+) ready`)
+var controlDNSPortRE = regexp.MustCompile(`\[INFO\] \[DNS\] CONTROL_DNS_PORT=(\d+)$`)
+
 var retryRE = regexp.MustCompile(`RAW stream (\d+):.*retrying`)
 
 func command(ctx context.Context, path string, args ...string) *exec.Cmd {
@@ -86,6 +88,7 @@ func (a *App) Connect() error {
 	a.state = "connecting"
 	a.detail = "Получаем доступ к VK и создаём туннель"
 	a.ready = map[string]bool{}
+	a.controlDNSPort = 0
 	a.rx = 0
 	a.tx = 0
 	a.mu.Unlock()
@@ -97,6 +100,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 	if bypassPath != "" {
 		defer os.Remove(bypassPath)
 	}
+	a.appendVersionLog("connection")
 	var runErr error
 	defer func() {
 		a.op.Lock()
@@ -205,6 +209,16 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 	for scanner.Scan() {
 		line := scanner.Text()
 		a.appendLog(line)
+		if match := controlDNSPortRE.FindStringSubmatch(line); match != nil {
+			port, _ := strconv.Atoi(match[1])
+			if port >= 1024 && port <= 65535 {
+				a.mu.Lock()
+				if a.generation == g {
+					a.controlDNSPort = port
+				}
+				a.mu.Unlock()
+			}
+		}
 		if strings.Contains(line, "CAPTCHA_RATE_LIMIT") {
 			if until := authRetryAt(a.dataDir, time.Now()); until > 0 {
 				a.setState(g, a.GetSnapshot().State, authPauseMessage(until))
@@ -242,7 +256,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 				}
 				applied = true
 				if p.RouteMode == "full" {
-					a.appendLog("Защита включена: IPv6 заблокирован, DNS вне Raw запрещён.")
+					a.appendLog("Защита включена: IPv6 заблокирован, DNS приложений через Raw; служебный DNS ядра через внешнее соединение.")
 				}
 				once.Do(func() { close(readySignal) })
 				go a.stats(ctx, g)

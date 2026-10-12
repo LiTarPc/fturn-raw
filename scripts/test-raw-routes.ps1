@@ -30,13 +30,13 @@ function Remove-DnsClientNrptRule($Name,[switch]$Force){
  foreach($r in @($script:nrpt.ToArray())){if($r.Name -eq $Name){[void]$script:nrpt.Remove($r)}}
 }
 function Clear-DnsClientCache {}
-function New-NetFirewallRule($Name,$DisplayName,$Group,$Direction,$Action,$Enabled,$Profile,$RemoteAddress,$Protocol,$PolicyStore,$RemotePort,$LocalAddress){
+function New-NetFirewallRule($Name,$DisplayName,$Group,$Direction,$Action,$Enabled,$Profile,$RemoteAddress,$Protocol,$PolicyStore,$RemotePort,$LocalAddress,$LocalPort){
  foreach($prefix in @($RemoteAddress)+@($LocalAddress)) {
   if($prefix -match '/0$'){throw 'Injected Windows validation: zero-length firewall prefix is invalid'}
  }
  $saved=Get-Content -LiteralPath $StateFile -Raw | ConvertFrom-Json
  Assert ($saved.firewallRules -contains $Name) 'Firewall rule was not journaled before creation'
- $script:rules.Add([pscustomobject]@{Name=$Name;Group=$Group;Direction=$Direction;Action=$Action;Enabled=$Enabled;Profile=$Profile;RemoteAddress=$RemoteAddress;Protocol=$Protocol;RemotePort=$RemotePort;LocalAddress=$LocalAddress})
+ $script:rules.Add([pscustomobject]@{Name=$Name;Group=$Group;Direction=$Direction;Action=$Action;Enabled=$Enabled;Profile=$Profile;RemoteAddress=$RemoteAddress;Protocol=$Protocol;RemotePort=$RemotePort;LocalAddress=$LocalAddress;LocalPort=$LocalPort})
  if($script:failFirewall -and $script:rules.Count -eq 3){throw 'Injected firewall failure after creation'}
 }
 function Get-NetFirewallRule($Name,$PolicyStore,$ErrorAction){return @($script:rules.ToArray() | Where-Object {-not $Name -or $_.Name -eq $Name})}
@@ -51,7 +51,9 @@ function Remove-NetRoute {
 }
 function Set-DnsClientServerAddress($InterfaceIndex,$ServerAddresses,[switch]$ResetServerAddresses){if($script:failDNS){throw 'Injected DNS restore failure'};$script:dnsRestored=$true}
 function Set-NetIPInterface($InterfaceIndex,$AddressFamily,$AutomaticMetric,$InterfaceMetric){$script:metricRestored=$true}
+function Get-NetUDPEndpoint($LocalPort,$ErrorAction){return $script:serviceSockets}
 function Reset-Mocks {
+ $script:ServiceDNSPort=0;$script:serviceSockets=@()
  $script:rules=[Collections.Generic.List[object]]::new()
  $script:rules.Add([pscustomobject]@{Name='another-VPN';Group='other'})
  $script:nrpt=[Collections.Generic.List[object]]::new()
@@ -71,6 +73,24 @@ try {
   Assert ($r.RemotePort -contains 53 -and $r.RemotePort -contains 853 -and $r.Direction -eq 'Outbound' -and $r.Action -eq 'Block') 'Incorrect DNS block'
  }
  Assert ($nrpt.Count -eq 2 -and $nrpt[1].Namespace[0] -eq '.' -and $nrpt[1].NameServers.Count -eq 2) 'DNS catch-all missing'
+ # Only a wildcard socket owned by the core may receive a single UDP-port exception.
+ Remove-OwnedRoutesUnlocked;Reset-Mocks
+ $ServiceDNSPort=53000;$script:serviceSockets=@([pscustomobject]@{OwningProcess=20;LocalAddress='0.0.0.0';LocalPort=53000})
+ $state=New-TestState;Save-State $state;Install-Privacy $state
+ Assert (($rules[2].LocalPort -join ',') -eq '0-52999,53001-65535') 'UDP DNS exclusion must contain exactly the reserved source port'
+ Assert (-not $rules[3].LocalPort) 'TCP DNS protection must not be weakened'
+ Remove-OwnedRoutesUnlocked
+ Reset-Mocks;$ServiceDNSPort=65535;$script:serviceSockets=@([pscustomobject]@{OwningProcess=20;LocalAddress='0.0.0.0';LocalPort=65535})
+ $state=New-TestState;Save-State $state;Install-Privacy $state
+ Assert (($rules[2].LocalPort -join ',') -eq '0-65534') 'Highest UDP port created an invalid range'
+ Remove-OwnedRoutesUnlocked
+ foreach($owner in 21,0){
+  Reset-Mocks;$ServiceDNSPort=53000;$script:serviceSockets=@([pscustomobject]@{OwningProcess=$owner;LocalAddress='0.0.0.0';LocalPort=53000})
+  $state=New-TestState;Save-State $state;$blocked=$false;try{Install-Privacy $state}catch{$blocked=$true}
+  Assert ($blocked -and $rules.Count -eq 1) 'Foreign service socket was allowed'
+  Remove-OwnedRoutesUnlocked
+ }
+ Reset-Mocks;$state=New-TestState;Save-State $state;Install-Privacy $state
  # Simulate crash: TUN no longer exists, but privacy must still be removed.
  Remove-OwnedRoutesUnlocked
  Assert (-not(Test-Path -LiteralPath $StateFile)) 'Cleanup did not clear state'

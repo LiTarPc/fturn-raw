@@ -56,6 +56,7 @@ type App struct {
 	cancel                  context.CancelFunc
 	cmd                     *exec.Cmd
 	generation              int
+	controlDNSPort          int
 	rx, tx                  uint64
 	clock                   connectionClock
 	bypassActive            bool

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"fturnraw/bypassrules"
+	"github.com/samosvalishe/free-turn-proxy/internal/buildinfo"
 	"github.com/samosvalishe/free-turn-proxy/internal/bypass"
 	"log"
 	"net/netip"
@@ -32,6 +33,10 @@ func main() {
 }
 func run() error {
 	for _, arg := range os.Args[1:] {
+		if arg == "-version" || arg == "--version" {
+			fmt.Println("FturnRaw core " + buildinfo.Version)
+			return nil
+		}
 		if arg == "-help" || arg == "--help" || arg == "-h" || arg == "--h" {
 			printHelp()
 			return nil
@@ -94,12 +99,14 @@ func run() error {
 	if err := rawvpn.BindControlInterface(opts.ControlInterface); err != nil {
 		return err
 	}
+	defer rawvpn.CloseControlDNS()
 	dev, err := rawvpn.OpenDevice(opts.TUN, opts.Address, opts.MTU)
 	if err != nil {
 		return err
 	}
 	defer dev.Close()
 	logger := logx.New(cfg.Log.Debug)
+	logger.Infof("[VERSION] FturnRaw core %s", buildinfo.Version)
 	logger.Infof("Experimental RAW client: TUN=%s address=%s MTU=%d; default route is not changed", dev.Name(), opts.Address, opts.MTU)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -116,7 +123,7 @@ func run() error {
 		if rules.Enabled && (runtime.GOOS != "windows" || opts.ControlInterface <= 0) {
 			return errors.New("bypass requires a selected Windows control interface")
 		}
-		wrapped, e := bypass.Wrap(ctx, dev, rules, prefix.Addr(), opts.MTU, rawvpn.ControlResolver())
+		wrapped, e := bypass.Wrap(ctx, dev, rules, prefix.Addr(), opts.MTU, rawvpn.BypassResolver())
 		if e != nil {
 			return e
 		}

@@ -5,7 +5,8 @@
  [string]$StateFile=(Join-Path $env:LOCALAPPDATA 'fturn-raw/network/route-state.json'),
  [string]$LegacyDirectory=$PSScriptRoot,
  [int]$OwnerPid=0,
- [int]$ClientPid=0
+ [int]$ClientPid=0,
+ [int]$ServiceDNSPort=0
 )
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
@@ -38,6 +39,12 @@ function Test-SameSession($a,$b){
 function Get-PrivacyAddressFilters {
  return [ordered]@{IPv6=@('::/1','8000::/1');OutsideRaw=@('0.0.0.0-10.77.0.1','10.77.0.3-255.255.255.255')}
 }
+function Get-DNSBlockedSourcePorts([int]$port) {
+ if($port -lt 1024 -or $port -gt 65535){throw 'Invalid service DNS port.'}
+ $ranges=@(('0-'+($port-1)))
+ if($port -lt 65535){$ranges+=(([string]($port+1))+'-65535')}
+ return $ranges
+}
 function Install-Privacy($state) {
  $rawIP=@(Get-NetIPAddress -InterfaceIndex $state.interfaceIndex -AddressFamily IPv4 | Where-Object {$_.IPAddress -eq '10.77.0.2'})
  if($rawIP.Count -ne 1){throw 'Raw adapter does not have the expected IPv4 address.'}
@@ -47,6 +54,13 @@ function Install-Privacy($state) {
  # Recover removes abandoned Raw rules before the core starts. A real foreign
  # catch-all remains a conflict: duplicate root policies are not safe to merge.
  if(@(Get-DnsClientNrptRule | Where-Object {@($_.Namespace) -contains '.'}).Count){throw 'An active DNS catch-all policy conflicts with Raw. It was preserved; Raw rolled back its changes.'}
+ if($ServiceDNSPort){
+  if($ServiceDNSPort -lt 1024 -or $ServiceDNSPort -gt 65535){throw 'Invalid service DNS port.'}
+  $sockets=@(Get-NetUDPEndpoint -LocalPort $ServiceDNSPort -ErrorAction Stop)
+  if($sockets.Count -ne 1 -or $sockets[0].OwningProcess -ne $ClientPid -or $sockets[0].LocalAddress -ne '0.0.0.0'){
+   throw 'Service DNS exemption requires the running core to own its reserved wildcard UDP socket.'
+  }
+ }
  $state.privacyTag='FturnRaw-'+[Guid]::NewGuid().ToString('N')
  $state.firewallRules=@(($state.privacyTag+'-IPv6'),($state.privacyTag+'-DNS-UDP'),($state.privacyTag+'-DNS-TCP'))
  Save-State $state
@@ -54,7 +68,11 @@ function Install-Privacy($state) {
  New-NetFirewallRule -Name $state.firewallRules[0] -DisplayName 'fturn Raw: block IPv6' -Group $state.privacyTag -Direction Outbound -Action Block -Enabled True -Profile Any -RemoteAddress $filters.IPv6 -Protocol Any -PolicyStore PersistentStore | Out-Null
  foreach($i in 1,2){
   $protocol=if($i -eq 1){'UDP'}else{'TCP'}
-  New-NetFirewallRule -Name $state.firewallRules[$i] -DisplayName ('fturn Raw: block DNS outside tunnel ('+$protocol+')') -Group $state.privacyTag -Direction Outbound -Action Block -Enabled True -Profile Any -Protocol $protocol -RemotePort 53,853 -LocalAddress $filters.OutsideRaw -PolicyStore PersistentStore | Out-Null
+  $portFilter=@{}
+  if($i -eq 1 -and $ServiceDNSPort){
+   $portFilter.LocalPort=@(Get-DNSBlockedSourcePorts $ServiceDNSPort)
+  }
+  New-NetFirewallRule @portFilter -Name $state.firewallRules[$i] -DisplayName ('fturn Raw: block DNS outside tunnel ('+$protocol+')') -Group $state.privacyTag -Direction Outbound -Action Block -Enabled True -Profile Any -Protocol $protocol -RemotePort 53,853 -LocalAddress $filters.OutsideRaw -PolicyStore PersistentStore | Out-Null
  }
  foreach($name in $state.firewallRules){
   $effective=@(Get-NetFirewallRule -PolicyStore ActiveStore -Name $name -ErrorAction SilentlyContinue | Where-Object {$_.Enabled -eq 'True' -and $_.Action -eq 'Block'})

@@ -29,7 +29,7 @@ type controlDNSPool struct {
 }
 
 func newControlDNSPool(upstreams []controlDNSUpstream) *controlDNSPool {
-	return &controlDNSPool{upstreams: upstreams, timeLimit: 4500 * time.Millisecond}
+	return &controlDNSPool{upstreams: upstreams, timeLimit: 9500 * time.Millisecond}
 }
 func (p *controlDNSPool) exchange(parent context.Context, query []byte) ([]byte, error) {
 	if len(p.upstreams) == 0 {
