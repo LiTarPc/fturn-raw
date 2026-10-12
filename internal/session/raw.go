@@ -25,13 +25,14 @@ func RunRaw(ctx context.Context, cfg *config.Client, dev rawvpn.Device, address 
 	}
 	logger = logx.OrNop(logger)
 	dnsdial.SetLogger(logger)
+	rawvpn.SetControlDNSLogger(logger)
 	if cfg.DNS.Servers != nil {
 		dnsdial.SetUDPDNSServers(cfg.DNS.Servers)
 	}
 	controlResolver := rawvpn.ControlResolver()
 	dialer := rawServiceDialer(cfg.DNS.Mode, controlResolver)
 	if controlResolver != nil {
-		logger.Infof("[DNS] Raw service DNS: HTTPS via selected underlay; UDP/53 disabled for VK/TURN lookups")
+		logger.Infof("[DNS] Raw service DNS: HTTPS with automatic failover via selected underlay; UDP/53 disabled for service lookups")
 	}
 	var connected atomic.Int32
 	total := cfg.TURN.N * max(len(cfg.VK.Links), 1)

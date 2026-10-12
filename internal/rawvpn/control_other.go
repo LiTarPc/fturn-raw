@@ -4,6 +4,7 @@ package rawvpn
 
 import (
 	"fmt"
+	"github.com/samosvalishe/free-turn-proxy/internal/logx"
 	"net"
 )
 
@@ -15,3 +16,5 @@ func BindControlInterface(index int) error {
 }
 
 func ControlResolver() *net.Resolver { return nil }
+
+func SetControlDNSLogger(logx.Logger) {}
