@@ -140,7 +140,7 @@ jobs:
         run: |
           cat release/SERVER-SHA256SUMS-* | sort > release/SERVER-SHA256SUMS
           rm release/SERVER-SHA256SUMS-linux-amd64 release/SERVER-SHA256SUMS-linux-arm64 release/SERVER-SHA256SUMS-windows-amd64
-      - name: Publish experimental release
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -150,4 +150,4 @@ jobs:
             echo "Release already exists; preserving published assets."
             exit 0
           fi
-          gh release create "$TAG" release/* --verify-tag --prerelease --title "fturn Raw $TAG" --notes "Experimental Windows x64 client (NSIS and portable) and SHA256 manifest. Optional server packages are controlled by the release plan. Profiles are stored in LocalAppData and preserved on upgrade/uninstall. Close the client via the tray before installing. The application and installer are currently unsigned."
+          gh release create "$TAG" release/* --verify-tag --latest --title "FturnRaw $TAG" --notes "Windows x64 client (NSIS and portable) and SHA256 manifest. Optional server packages are controlled by the release plan. Profiles are stored in LocalAppData and preserved on upgrade/uninstall. Close the client via the tray before installing. The application and installer are currently unsigned."
