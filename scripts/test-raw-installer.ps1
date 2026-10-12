@@ -1,15 +1,15 @@
-param([switch]$SkipCompile)
+﻿param([switch]$SkipCompile)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $expectedVersion=(Get-Content -LiteralPath (Join-Path $root 'ui/newservice/wails.json') -Raw | ConvertFrom-Json).info.productVersion
 $testRoot=Join-Path $root 'dist/installer-smoke-clean'
-$target=Join-Path $testRoot 'installed'
+$target=Join-Path $testRoot ('installed '+[Guid]::NewGuid().ToString('N'))
 $setup=Join-Path $testRoot 'setup-test.exe'
 New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
 if(-not $SkipCompile){& (Join-Path $PSScriptRoot 'build-raw-installer.ps1') -SkipBuild -TestMode -OutputFile $setup}
 function Assert($condition,$message){if(-not $condition){throw $message}}
 # This separately compiled test variant uses HKCU and unique shortcuts, no elevation,
-# no WebView installation, no network changes, and never launches the application.
+# real PowerShell support launch with mocked system APIs, no network changes, and no application launch.
 $appData=Join-Path $env:LOCALAPPDATA 'fturn-raw'
 $before=@{}
 foreach($name in @('profiles.json','app-settings.json')){
@@ -21,6 +21,8 @@ function Install-Test {
  Assert ($process.ExitCode -eq 0) 'NSIS silent install failed'
 }
 Install-Test
+Assert (@(Get-Content -LiteralPath (Join-Path $target 'installer-test-support.log')).Count -eq 1) 'NSIS did not execute the Prepare support script'
+Assert ([IO.File]::ReadAllText((Join-Path $target 'installer-test-output.txt'),[Text.Encoding]::Unicode).Contains('Проверка подготовки завершена.')) 'NSIS corrupted Unicode PowerShell output'
 $source=Join-Path $root 'dist/windows-ui-clean'
 foreach($file in @('FturnRaw.exe','runtime/raw-client.exe','runtime/wintun.dll','runtime/routes.ps1','licenses/LICENSE','docs/README.md')){
  Assert ((Get-FileHash -LiteralPath (Join-Path $source $file)).Hash -eq (Get-FileHash -LiteralPath (Join-Path $target $file)).Hash) "Payload hash mismatch: $file"
@@ -39,6 +41,9 @@ Assert ((Get-ItemProperty -LiteralPath $reg).DisplayVersion -eq $expectedVersion
 $uninstaller=Join-Path $target 'Uninstall.exe'
 $process=Start-Process -FilePath $uninstaller -ArgumentList '/S',("_?="+$target) -WindowStyle Hidden -Wait -PassThru
 Assert ($process.ExitCode -eq 0) 'NSIS uninstall failed'
+$prepareCalls=@(Get-Content -LiteralPath (Join-Path $target 'installer-test-support.log'))
+Assert (($prepareCalls -join ',') -eq 'Prepare,Prepare,Uninstall') 'NSIS install/upgrade/uninstall did not execute full support scripts'
+Assert (@(Get-Content -LiteralPath (Join-Path $target 'installer-test-recovery.log')).Count -eq 3) 'NSIS recovery stub was not called three times'
 Assert (-not(Test-Path -LiteralPath (Join-Path $target 'FturnRaw.exe'))) 'Uninstall retained executable'
 Assert (-not(Test-Path -LiteralPath $reg)) 'Uninstall retained registry entry'
 Assert (Test-Path -LiteralPath $personal) 'Uninstall deleted legacy settings'

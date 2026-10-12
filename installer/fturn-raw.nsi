@@ -1,10 +1,10 @@
-Unicode true
+﻿Unicode true
 !include "MUI2.nsh"
 !include "x64.nsh"
 !include "WinVer.nsh"
 !include "LogicLib.nsh"
 !ifndef VERSION
- !define VERSION "0.1.7"
+ !define VERSION "0.1.8"
 !endif
 !ifndef PAYLOAD_DIR
  !error "PAYLOAD_DIR is required"
@@ -37,7 +37,7 @@ VIAddVersionKey "LegalCopyright" "fturn Raw contributors"
 !define MUI_ICON "..\ui\newservice\build\windows\icon.ico"
 !define MUI_UNICON "..\ui\newservice\build\windows\icon.ico"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\FturnRaw.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Запустить fturn Raw"
+!define MUI_FINISHPAGE_RUN_TEXT "Запустить FturnRaw"
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "..\ui\newservice\LICENSE"
@@ -80,21 +80,33 @@ Function un.onInit
 FunctionEnd
 Section "fturn Raw" MainSection
  SetOutPath "$INSTDIR"
-!ifndef TEST_MODE
  InitPluginsDir
  File /oname=$PLUGINSDIR\setup-support.ps1 "setup-support.ps1"
+!ifdef TEST_MODE
+ File /oname=$PLUGINSDIR\setup-support-test.ps1 "setup-support-test.ps1"
+ File /oname=$PLUGINSDIR\routes.ps1 "setup-support-test-routes.ps1"
+!else
  File /oname=$PLUGINSDIR\routes.ps1 "${PAYLOAD_DIR}\runtime\routes.ps1"
+!endif
  ${DisableX64FSRedirection}
+!ifdef TEST_MODE
+ nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\setup-support-test.ps1" -SupportScript "$PLUGINSDIR\setup-support.ps1" -Action Prepare -InstallDir "$INSTDIR"'
+!else
  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\setup-support.ps1" -Action Prepare -InstallDir "$INSTDIR"'
+!endif
  ${EnableX64FSRedirection}
  Pop $0
  Pop $1
+!ifdef TEST_MODE
+ FileOpen $2 "$INSTDIR\installer-test-output.txt" w
+ FileWriteUTF16LE $2 $1
+ FileClose $2
+!endif
  ${If} $0 != 0
-  MessageBox MB_ICONSTOP "Подготовка не выполнена. Закройте fturn Raw через меню трея и повторите установку.$\r$\n$1" /SD IDOK
+  MessageBox MB_ICONSTOP "Подготовка к установке не выполнена. Подробности:$\r$\n$1" /SD IDOK
   SetErrorLevel 1
   Abort
  ${EndIf}
-!endif
  ; Explicit manifest; no personal configurations are shipped.
  File "${PAYLOAD_DIR}\FturnRaw.exe"
  SetOutPath "$INSTDIR\runtime"
@@ -102,6 +114,10 @@ Section "fturn Raw" MainSection
  File "${PAYLOAD_DIR}\runtime\wintun.dll"
  File "${PAYLOAD_DIR}\runtime\routes.ps1"
  File "setup-support.ps1"
+!ifdef TEST_MODE
+ File "setup-support-test.ps1"
+ File "setup-support-test-routes.ps1"
+!endif
  SetOutPath "$INSTDIR\licenses"
  File "${PAYLOAD_DIR}\licenses\LICENSE"
  File "${PAYLOAD_DIR}\licenses\UI-LICENSE.txt"
@@ -141,18 +157,20 @@ Section "fturn Raw" MainSection
  WriteRegDWORD ${REG_HIVE} "${REG_KEY}" "NoRepair" 1
 SectionEnd
 Section "Uninstall"
-!ifndef TEST_MODE
  ${DisableX64FSRedirection}
+!ifdef TEST_MODE
+ nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\runtime\setup-support-test.ps1" -SupportScript "$INSTDIR\runtime\setup-support.ps1" -RecoveryScript "$INSTDIR\runtime\setup-support-test-routes.ps1" -Action Uninstall -InstallDir "$INSTDIR"'
+!else
  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\runtime\setup-support.ps1" -Action Uninstall -InstallDir "$INSTDIR"'
+!endif
  ${EnableX64FSRedirection}
  Pop $0
  Pop $1
  ${If} $0 != 0
-  MessageBox MB_ICONSTOP "Не удалось подготовить удаление. Закройте fturn Raw через меню трея.$\r$\n$1" /SD IDOK
+  MessageBox MB_ICONSTOP "Подготовка к удалению не выполнена. Подробности:$\r$\n$1" /SD IDOK
   SetErrorLevel 1
   Abort
  ${EndIf}
-!endif
  Delete "$INSTDIR\FturnRaw.exe"
  Delete "$INSTDIR\Uninstall.exe"
  Delete "$INSTDIR\raw-client.exe"
@@ -170,6 +188,10 @@ Section "Uninstall"
  Delete "$INSTDIR\runtime\wintun.dll"
  Delete "$INSTDIR\runtime\routes.ps1"
  Delete "$INSTDIR\runtime\setup-support.ps1"
+!ifdef TEST_MODE
+ Delete "$INSTDIR\runtime\setup-support-test.ps1"
+ Delete "$INSTDIR\runtime\setup-support-test-routes.ps1"
+!endif
  Delete "$INSTDIR\licenses\LICENSE"
  Delete "$INSTDIR\licenses\UI-LICENSE.txt"
  Delete "$INSTDIR\licenses\WINTUN-LICENSE.txt"

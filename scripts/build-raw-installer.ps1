@@ -1,5 +1,5 @@
 param(
- [string]$Version='0.1.7',
+ [string]$Version='0.1.8',
  [switch]$SkipBuild,
  [switch]$TestMode,
  [string]$OutputFile
@@ -17,7 +17,7 @@ if($compiler){$compiler=$compiler.Source}else{$compiler=Join-Path ${env:ProgramF
 if(-not(Test-Path -LiteralPath $compiler)){throw 'Install NSIS 3 and add makensis.exe to PATH'}
 if(-not $OutputFile){$OutputFile=Join-Path $projectRoot "dist/fturn-raw-$Version-windows-x64-setup.exe"}
 $OutputFile=[IO.Path]::GetFullPath($OutputFile)
-$defines=@('/V3',"/DVERSION=$Version","/DPAYLOAD_DIR=$payload","/DOUTPUT_FILE=$OutputFile")
+$defines=@('/V3','/INPUTCHARSET','UTF8',"/DVERSION=$Version","/DPAYLOAD_DIR=$payload","/DOUTPUT_FILE=$OutputFile")
 if($TestMode){$defines+='/DTEST_MODE'}
 Push-Location (Join-Path $projectRoot 'installer')
 try{

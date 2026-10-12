@@ -1,9 +1,17 @@
 ﻿param(
  [ValidateSet('Prepare','Uninstall')][string]$Action,
  [Parameter(Mandatory=$true)][string]$InstallDir,
- [string]$RecoveryScript=(Join-Path $PSScriptRoot 'routes.ps1')
+ [string]$RecoveryScript
 )
 $ErrorActionPreference='Stop'
+# NSIS captures stdout without a console. UTF-16 keeps localized PowerShell
+# diagnostics readable through nsExec's Unicode detection.
+[Console]::OutputEncoding=[Text.Encoding]::Unicode
+# Windows PowerShell 5.1 does not initialize PSScriptRoot while binding
+# advanced-script parameter defaults. Resolve this only after binding.
+if([string]::IsNullOrWhiteSpace($RecoveryScript)){
+ $RecoveryScript=Join-Path $PSScriptRoot 'routes.ps1'
+}
 function Assert-ClientStopped {
  if(@(Get-Process -Name FturnRaw -ErrorAction SilentlyContinue).Count){
   throw 'Close fturn Raw using Exit in the tray menu before installing or uninstalling.'

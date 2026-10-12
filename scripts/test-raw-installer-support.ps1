@@ -79,3 +79,26 @@ try {
  foreach($name in 'routes.ps1','calls.json'){$path=Join-Path $testDir $name;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}}
  Remove-Item -LiteralPath $testDir -Force
 }
+
+Remove-Item Function:\Start-Process
+# Regression: run all of the support script in Windows PowerShell 5.1, not
+# just its extracted functions. The parameter-binding failure occurs first.
+$launchDir=Join-Path $root ('dist/installer-powershell-test-'+[Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $launchDir | Out-Null
+$launchSupport=Join-Path $launchDir 'setup-support.ps1'
+$launchRoutes=Join-Path $launchDir 'routes.ps1'
+Copy-Item -LiteralPath (Join-Path $root 'installer/setup-support.ps1') -Destination $launchSupport
+Copy-Item -LiteralPath (Join-Path $root 'installer/setup-support-test-routes.ps1') -Destination $launchRoutes
+$launchRunner=Join-Path $root 'installer/setup-support-test.ps1'
+foreach($launchPS in @("$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe","$env:WINDIR\SysWOW64\WindowsPowerShell\v1.0\powershell.exe")){
+ if(-not(Test-Path -LiteralPath $launchPS)){continue}
+ foreach($launchAction in @('Prepare','Uninstall')){
+  $launchArgs=@('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$launchRunner+'"'),'-SupportScript',('"'+$launchSupport+'"'),'-Action',$launchAction,'-InstallDir',('"'+$launchDir+'"'))
+  $launch=Start-Process -FilePath $launchPS -ArgumentList $launchArgs -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $launchDir 'stdout.txt') -RedirectStandardError (Join-Path $launchDir 'stderr.txt')
+  if($launch.ExitCode -ne 0){throw ('Full Windows PowerShell support launch failed: '+$launchAction+'; see '+$launchDir)}
+ }
+}
+$launchCalls=@(Get-Content -LiteralPath (Join-Path $launchDir 'installer-test-support.log'))
+Assert ($launchCalls.Count -eq 4 -and @($launchCalls | Where-Object {$_ -eq 'Prepare'}).Count -eq 2) 'Full x64/x86 support script did not execute'
+Assert (@(Get-Content -LiteralPath (Join-Path $launchDir 'installer-test-recovery.log')).Count -eq 4) 'Default recovery path did not reach the recovery script'
+Write-Host 'Full Windows PowerShell 5.1 x64/x86 Prepare/Uninstall launches passed with mocked system operations.'
