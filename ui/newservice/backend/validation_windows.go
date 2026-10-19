@@ -13,6 +13,15 @@ import (
 
 func validateFields(p Profile) error {
 	p = profileDefaults(p)
+	if p.UplinkMode != "packet" && p.UplinkMode != "tcp-flow" {
+		return errors.New("Uplink mode must be packet or tcp-flow.")
+	}
+	if p.Transport != "tcp" && p.Transport != "udp" {
+		return errors.New("Транспорт TURN должен быть TCP или UDP.")
+	}
+	if p.ObfProfile != "rtpopus2" && p.ObfProfile != "rtpopus3" {
+		return errors.New("Профиль RTP должен быть rtpopus2 или rtpopus3.")
+	}
 	host, port, err := net.SplitHostPort(p.Server)
 	if err != nil || net.ParseIP(host) == nil || net.ParseIP(host).To4() == nil {
 		return errors.New("Укажите IPv4:порт сервера.")

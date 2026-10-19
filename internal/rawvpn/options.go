@@ -8,6 +8,7 @@ import (
 
 // ClientOptions are split out before the existing fturn configuration parser.
 type ClientOptions struct {
+	UplinkMode       string
 	TUN              string
 	Address          string
 	MTU              int
@@ -18,12 +19,12 @@ type ClientOptions struct {
 }
 
 func ParseClientOptions(args []string) (ClientOptions, []string, error) {
-	o := ClientOptions{TUN: "ftraw0", Address: "10.77.0.2/24", MTU: DefaultMTU}
+	o := ClientOptions{TUN: "ftraw0", Address: "10.77.0.2/24", MTU: DefaultMTU, UplinkMode: UplinkPacket}
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		flag, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-		if !strings.HasPrefix(arg, "-") || (flag != "tun" && flag != "raw-address" && flag != "raw-mtu" && flag != "obf-key-file" && flag != "control-interface" && flag != "bypass-file" && flag != "state-dir") {
+		if !strings.HasPrefix(arg, "-") || (flag != "raw-uplink" && flag != "tun" && flag != "raw-address" && flag != "raw-mtu" && flag != "obf-key-file" && flag != "control-interface" && flag != "bypass-file" && flag != "state-dir") {
 			rest = append(rest, arg)
 			continue
 		}
@@ -35,6 +36,11 @@ func ParseClientOptions(args []string) (ClientOptions, []string, error) {
 			value = args[i]
 		}
 		switch flag {
+		case "raw-uplink":
+			if err := validateUplink(value); err != nil {
+				return o, nil, err
+			}
+			o.UplinkMode = value
 		case "tun":
 			o.TUN = value
 		case "raw-address":

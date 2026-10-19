@@ -17,6 +17,9 @@ const maxShareLength = 16 * 1024
 
 // Separate wire format deliberately excludes local file paths and future fields.
 type sharedProfile struct {
+	UplinkMode     string `json:"uplink,omitempty"`
+	Transport      string `json:"transport,omitempty"`
+	ObfProfile     string `json:"obfProfile,omitempty"`
 	Version        int    `json:"v"`
 	Server         string `json:"server"`
 	VkLink         string `json:"vk"`
@@ -46,10 +49,16 @@ func decodeShare(link string) (Profile, []byte, error) {
 		return fail()
 	}
 	var extra any
-	if decoder.Decode(&extra) != io.EOF || (wire.Version != 1 && wire.Version != 2) || (wire.Version == 1 && wire.StreamsPerCred != 0) || (wire.Version == 2 && (wire.StreamsPerCred < 1 || wire.StreamsPerCred > 64)) {
+	if decoder.Decode(&extra) != io.EOF || wire.Version < 1 || wire.Version > 4 ||
+		(wire.Version == 1 && wire.StreamsPerCred != 0) ||
+		(wire.Version >= 2 && (wire.StreamsPerCred < 1 || wire.StreamsPerCred > 64)) ||
+		(wire.Version < 3 && (wire.Transport != "" || wire.ObfProfile != "")) ||
+		(wire.Version < 4 && wire.UplinkMode != "") ||
+		(wire.Version == 4 && wire.UplinkMode == "") ||
+		(wire.Version >= 3 && (wire.Transport == "" || wire.ObfProfile == "")) {
 		return fail()
 	}
-	p := profileDefaults(Profile{Server: wire.Server, VkLink: wire.VkLink, Mtu: wire.Mtu, Streams: wire.Streams, StreamsPerCred: wire.StreamsPerCred, RouteMode: wire.RouteMode})
+	p := profileDefaults(Profile{UplinkMode: wire.UplinkMode, Transport: wire.Transport, ObfProfile: wire.ObfProfile, Server: wire.Server, VkLink: wire.VkLink, Mtu: wire.Mtu, Streams: wire.Streams, StreamsPerCred: wire.StreamsPerCred, RouteMode: wire.RouteMode})
 	if err := validateFields(p); err != nil {
 		return Profile{}, nil, err
 	}
@@ -73,6 +82,19 @@ func (a *App) ExportProfile(p Profile) (string, error) {
 	if p.StreamsPerCred != defaultStreamsPerCred {
 		wire.Version = 2
 		wire.StreamsPerCred = p.StreamsPerCred
+	}
+	if p.Transport != "tcp" || p.ObfProfile != "rtpopus2" {
+		wire.Version = 3
+		wire.StreamsPerCred = p.StreamsPerCred
+		wire.Transport = p.Transport
+		wire.ObfProfile = p.ObfProfile
+	}
+	if p.UplinkMode != "packet" {
+		wire.Version = 4
+		wire.StreamsPerCred = p.StreamsPerCred
+		wire.Transport = p.Transport
+		wire.ObfProfile = p.ObfProfile
+		wire.UplinkMode = p.UplinkMode
 	}
 	data, err := json.Marshal(wire)
 	if err != nil {

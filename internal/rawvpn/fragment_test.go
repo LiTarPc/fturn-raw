@@ -23,7 +23,7 @@ func (*fragmentCapture) SetReadDeadline(time.Time) error        { return nil }
 func (*fragmentCapture) SetWriteDeadline(time.Time) error       { return nil }
 
 func TestLargeIPEncryptedFragmentRoundTrip(t *testing.T) {
-	for _, profile := range []string{"rtpopus", "rtpopus2"} {
+	for _, profile := range []string{"rtpopus", "rtpopus2", "rtpopus3"} {
 		for _, size := range []int{1350, 1351, 1492, 1500} {
 			key := testKey(t)
 			sender, _ := newCodec(profile, key, false, nil)
@@ -43,7 +43,11 @@ func TestLargeIPEncryptedFragmentRoundTrip(t *testing.T) {
 			var assembled []byte
 			for i := len(capture.packets) - 1; i >= 0; i-- { // Out-of-order fragments must work.
 				wire := capture.packets[i]
-				if len(wire)+28 > 1431 {
+				ceiling := 1431
+				if profile == "rtpopus3" {
+					ceiling = 1435
+				}
+				if len(wire)+28 > ceiling {
 					t.Fatal("inner MTU increase enlarged the outer datagram")
 				}
 				plain, err := receiver.decode(make([]byte, maxFrame), wire)

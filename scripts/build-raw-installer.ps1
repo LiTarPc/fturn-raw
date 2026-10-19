@@ -1,5 +1,5 @@
 param(
- [string]$Version='0.1.9',
+ [string]$Version='0.1.13',
  [switch]$SkipBuild,
  [switch]$TestMode,
  [string]$OutputFile

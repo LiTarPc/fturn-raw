@@ -43,7 +43,9 @@ func TestLiveRawVK(t *testing.T) {
 	dev := &liveProbeDevice{input: make(chan []byte, 8), output: make(chan []byte, 64), done: make(chan struct{})}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	done := make(chan error, 1)
-	go func() { done <- RunRaw(ctx, cfg, dev, netip.MustParseAddr("10.77.0.2"), mtu, logx.New(false)) }()
+	go func() {
+		done <- RunRaw(ctx, cfg, dev, netip.MustParseAddr("10.77.0.2"), mtu, "packet", logx.New(false))
+	}()
 	defer func() {
 		cancel()
 		select {

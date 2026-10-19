@@ -12,6 +12,9 @@ import (
 )
 
 type Profile struct {
+	UplinkMode     string
+	Transport      string
+	ObfProfile     string
 	Server         string
 	VkLink         string
 	Key            string
@@ -64,6 +67,8 @@ type App struct {
 	bypass                  *bypassService
 	desktop                 *desktopController
 	startupDone             chan struct{}
+	updates                 *updateService
+	installing              bool
 }
 
 func NewApp() *App {
@@ -76,7 +81,7 @@ func NewApp() *App {
 func newApp(root string) *App                  { return newAppWithData(root, root) }
 func newAppWithData(root, dataDir string) *App { return newAppAt(root, dataDir, nil) }
 func newAppAt(root, dataDir string, initErr error) *App {
-	a := &App{root: root, dataDir: dataDir, profile: Profile{KeyFile: "raw.key", Mtu: 1420, Streams: 10, StreamsPerCred: defaultStreamsPerCred, RouteMode: "full"}, state: "idle", detail: "Готов к подключению", ready: map[string]bool{}, logs: []string{}}
+	a := &App{root: root, dataDir: dataDir, profile: profileDefaults(Profile{KeyFile: "raw.key", Mtu: 1420, Streams: 10, StreamsPerCred: defaultStreamsPerCred, RouteMode: "full"}), state: "idle", detail: "Готов к подключению", ready: map[string]bool{}, logs: []string{}}
 	if initErr == nil {
 		initErr = migrateUserData(root, dataDir)
 	}
@@ -104,6 +109,7 @@ func newAppAt(root, dataDir string, initErr error) *App {
 			a.appendErrorLog("Не удалось архивировать старые файлы: " + err.Error())
 		}
 	}
+	a.updates = newUpdateService()
 	a.startupDone = make(chan struct{})
 	a.desktop = &desktopController{tray: &nativeTray{}, snapshot: a.GetSnapshot, settings: a.settings.get, log: a.appendLog, toggle: func() {
 		var err error

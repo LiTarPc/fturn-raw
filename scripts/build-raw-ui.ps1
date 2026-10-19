@@ -2,6 +2,8 @@
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
 $productVersion=(Get-Content -LiteralPath (Join-Path $projectRoot 'ui/newservice/wails.json') -Raw | ConvertFrom-Json).info.productVersion
+$coreVersion=([IO.File]::ReadAllText((Join-Path $projectRoot 'internal/buildinfo/core-version.txt'))).Trim()
+if($coreVersion -notmatch '^\d+\.\d+\.\d+$'){throw 'Raw core version must be major.minor.patch'}
 $oldArch=$env:GOARCH;$oldCGO=$env:CGO_ENABLED;$oldOS=$env:GOOS
 Push-Location $projectRoot
 try {
@@ -9,7 +11,7 @@ try {
  if(-not $SkipGoBuild){
   $coreDir=Join-Path $projectRoot 'dist/windows-amd64'
   New-Item -ItemType Directory -Path $coreDir -Force | Out-Null
-  go build -trimpath -ldflags ("-s -w -X github.com/samosvalishe/free-turn-proxy/internal/buildinfo.Version="+$productVersion) -o (Join-Path $coreDir 'raw-client.exe') ./cmd/raw-client
+  go build -trimpath -ldflags ("-s -w -X github.com/samosvalishe/free-turn-proxy/internal/buildinfo.Version="+$coreVersion) -o (Join-Path $coreDir 'raw-client.exe') ./cmd/raw-client
   if($LASTEXITCODE -ne 0){throw 'Raw client build failed'}
   & (Join-Path $PSScriptRoot 'bundle-raw-wintun.ps1') -OutputDir $coreDir
  }

@@ -96,7 +96,7 @@ func TestLiveRawVKStability(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	logger := &stabilityLog{Logger: logx.New(false), ready: map[string]bool{}}
-	go func() { done <- RunRaw(ctx, cfg, dev, netip.MustParseAddr("10.77.0.2"), mtu, logger) }()
+	go func() { done <- RunRaw(ctx, cfg, dev, netip.MustParseAddr("10.77.0.2"), mtu, "packet", logger) }()
 	defer func() {
 		cancel()
 		select {

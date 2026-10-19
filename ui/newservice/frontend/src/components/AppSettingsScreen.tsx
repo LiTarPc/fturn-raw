@@ -1,9 +1,10 @@
-import {IconSettings2,IconCpu} from '@tabler/icons-react';
+import {IconSettings2} from '@tabler/icons-react';
+import {AppVersionCard} from './AppVersionCard';
 import {native} from '../api';
 import type {Snapshot,AppSettings} from '../api';
 import {ScreenHeader} from './ScreenHeader';
 import {Toggle} from './Toggle';
-export function AppSettingsScreen({snapshot:s,busy,onChange,onBack,onExit}:{snapshot?:Snapshot;busy:boolean;onChange:(s:AppSettings)=>void;onBack:()=>void;onExit:()=>void}){
+export function AppSettingsScreen({snapshot:s,busy,running,invoke,onChange,onBack,onExit}:{snapshot?:Snapshot;busy:boolean;running:boolean;invoke:(fn:()=>Promise<unknown>)=>Promise<boolean>;onChange:(s:AppSettings)=>void;onBack:()=>void;onExit:()=>void}){
  const settings=s?.settings;
  const toggle=(key:keyof AppSettings)=>{if(settings)onChange({...settings,[key]:!settings[key]})};
  return <section className="screen app-settings">
@@ -14,10 +15,8 @@ export function AppSettingsScreen({snapshot:s,busy,onChange,onBack,onExit}:{snap
    <Toggle label="Запускать с Windows" checked={settings?.startWithWindows??false} disabled={busy||!s} onChange={()=>toggle('startWithWindows')}/>
    <Toggle label="Авто-подключение" checked={settings?.autoConnect??false} disabled={busy||!s} onChange={()=>toggle('autoConnect')}/>
   </div>
-  <p className="hint">{settings?.minimizeToTray?'Закрытие и сворачивание окна оставляют Raw в трее. Для завершения выбери «Выход».':'Закрытие окна отключает Raw и завершает приложение.'}<br/>Авто-подключение использует выбранный профиль при запуске приложения.</p>
   {native&&settings?.minimizeToTray&&!s?.trayReady&&<p className="notice">Трей пока недоступен. Окно останется на панели задач.</p>}
-  <div className="core-card"><strong><IconCpu size={17}/> Ядро Raw</strong><p className="hint">raw-client.exe · TCP к VK TURN<br/>MTU и потоки настраиваются отдельно для каждого сервера.</p><p className="hint">Для экспериментального Raw пока нет канала автоматических обновлений.</p></div>
-  <p className="hint data-path">Профили и настройки<br/>{s?.dataDir??"%LOCALAPPDATA%\\fturn-raw"}</p>
+  <AppVersionCard busy={busy} running={running} invoke={invoke}/>
   <button className="action secondary exit-action" disabled={busy||!native} onClick={onExit}>Выход из приложения</button>
  </section>
 }

@@ -35,3 +35,11 @@ The CI release plan in scripts/ci/release-plan.json controls whether server pack
 ## Installer compatibility in 0.1.8
 
 The recovery path is initialized after parameter binding because Windows PowerShell 5.1 leaves PSScriptRoot empty in advanced-script parameter defaults. NSIS source is UTF-8 with an explicit compiler charset; support output is UTF-16 for nsExec Unicode detection. Tests now execute the complete support script in Windows PowerShell x64/x86 and through the NSIS test install, upgrade and uninstall. Only OS/network operations are mocked in these checks; actual route recovery, downloads, startup tasks and client connections are not run.
+
+## Updates from application settings
+
+The settings screen reports the stamped application version and the installed Raw core's `--version` result. Opening settings checks the latest stable release in `LiTarPc/fturn-raw`; a manual check is also available. Development builds are labelled explicitly and do not offer installation over an unknown version.
+
+An update requires the complete `fturn-raw-<version>-windows-x64-setup.exe` and `SHA256SUMS` assets from the same release. The client refuses prereleases, equal/older versions, incomplete uploads, oversized packages, size mismatches and invalid SHA-256 checksums. Checking is allowed during a connection; installation requires the connection to be stopped.
+
+The client downloads and verifies the full installer, then starts a hidden helper that waits for the application to exit, verifies the installer again, and opens the normal installer wizard with the current application directory as its target. The wizard updates the interface and Raw runtime together and retains LocalAppData profiles/settings. It does not silently accept the license or launch a new connection. An explicit `/D=` target takes precedence over a registered installation directory, including paths containing spaces. Installer files are removed after a successful installation; on installer cancellation/failure they remain in the temporary update directory.

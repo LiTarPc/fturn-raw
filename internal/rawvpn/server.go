@@ -37,7 +37,7 @@ type rawServer struct {
 	cfg          ServerConfig
 	pc           net.PacketConn
 	dev          Device
-	base         *codec
+	bases        []*codec
 	mu           sync.Mutex
 	sessions     map[string]*serverSession
 	order        []string
@@ -54,12 +54,21 @@ func RunServer(ctx context.Context, pc net.PacketConn, dev Device, cfg ServerCon
 	if err := validateMTU(cfg.MTU); err != nil {
 		return err
 	}
-	base, err := newCodec(cfg.Profile, cfg.Key, true, nil)
-	if err != nil {
-		return err
+	profiles := []string{cfg.Profile}
+	if cfg.Profile == "auto" {
+		profiles = []string{"rtpopus2", "rtpopus3"}
 	}
+	var bases []*codec
+	for _, profile := range profiles {
+		base, err := newCodec(profile, cfg.Key, true, nil)
+		if err != nil {
+			return err
+		}
+		bases = append(bases, base)
+	}
+	var err error
 	cfg.Log = logx.OrNop(cfg.Log)
-	s := &rawServer{cfg: cfg, pc: pc, dev: dev, base: base, sessions: make(map[string]*serverSession)}
+	s := &rawServer{cfg: cfg, pc: pc, dev: dev, bases: bases, sessions: make(map[string]*serverSession)}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stop := context.AfterFunc(runCtx, func() { _ = pc.Close(); _ = dev.Close() })
@@ -123,17 +132,21 @@ func (s *rawServer) uplink(ctx context.Context) error {
 				continue
 			}
 		}
-		plain, err := s.base.decode(plainBuf, wireBuf[:n])
-		if err != nil || (len(plain) != 39 && len(plain) != 55) || plain[0] != frameHello {
-			continue
-		}
-		if err := s.hello(addr, plain); err != nil {
-			s.cfg.Log.Debugf("RAW hello rejected: %v", err)
+		for _, base := range s.bases {
+			plain, err := base.decode(plainBuf, wireBuf[:n])
+			if err != nil || (len(plain) != 39 && len(plain) != 55) || plain[0] != frameHello {
+				continue
+			}
+			// Profile selection is accepted only after the bootstrap AEAD authenticates.
+			if err := s.hello(addr, plain, base); err != nil {
+				s.cfg.Log.Debugf("RAW hello rejected: %v", err)
+			}
+			break
 		}
 	}
 }
 
-func (s *rawServer) hello(addr net.Addr, plain []byte) error {
+func (s *rawServer) hello(addr net.Addr, plain []byte, base *codec) error {
 	ip := netip.AddrFrom4([4]byte(plain[33:37]))
 	mtu := int(binary.BigEndian.Uint16(plain[37:39]))
 	if ip != s.cfg.ClientAddress || mtu != s.cfg.MTU {
@@ -152,7 +165,7 @@ func (s *rawServer) hello(addr net.Addr, plain []byte) error {
 	}
 	s.mu.Lock()
 	worker := s.sessions[addr.String()]
-	if worker == nil || worker.clientToken != token || worker.group != group {
+	if worker == nil || worker.clientToken != token || worker.group != group || worker.codec.profile != base.profile {
 		if worker == nil && len(s.sessions) >= 128 {
 			s.mu.Unlock()
 			return errors.New("raw: worker limit reached")
@@ -168,7 +181,7 @@ func (s *rawServer) hello(addr net.Addr, plain []byte) error {
 			tokens = append(tokens, logical[:]...)
 		}
 		var err error
-		worker.codec, err = newCodec(s.cfg.Profile, s.cfg.Key, true, tokens)
+		worker.codec, err = newCodec(base.profile, s.cfg.Key, true, tokens)
 		if err != nil {
 			s.mu.Unlock()
 			return err
@@ -184,7 +197,7 @@ func (s *rawServer) hello(addr net.Addr, plain []byte) error {
 	copy(challenge[1:17], worker.clientToken[:])
 	copy(challenge[17:33], worker.serverToken[:])
 	binary.BigEndian.PutUint16(challenge[33:], uint16(s.cfg.MTU))
-	return s.send(addr, s.base, challenge)
+	return s.send(addr, base, challenge)
 }
 
 func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
@@ -219,7 +232,7 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 		worker.active, worker.seen = true, time.Now()
 		s.mu.Unlock()
 		if !active {
-			s.cfg.Log.Infof("RAW authenticated worker %s for %s", worker.addr, s.cfg.ClientAddress)
+			s.cfg.Log.Infof("RAW authenticated worker %s for %s profile=%s", worker.addr, s.cfg.ClientAddress, worker.codec.profile)
 		}
 		s.sendSessionControl(worker, frameReady)
 		return nil

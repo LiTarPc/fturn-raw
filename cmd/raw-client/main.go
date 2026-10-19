@@ -34,7 +34,7 @@ func main() {
 func run() error {
 	for _, arg := range os.Args[1:] {
 		if arg == "-version" || arg == "--version" {
-			fmt.Println("FturnRaw core " + buildinfo.Version)
+			fmt.Println("FturnRaw core " + buildinfo.CoreVersion())
 			return nil
 		}
 		if arg == "-help" || arg == "--help" || arg == "-h" || arg == "--h" {
@@ -57,7 +57,7 @@ func run() error {
 	cfg, err := config.ParseClient(append(defaults, args...), os.Stderr)
 	if errors.Is(err, flag.ErrHelp) {
 		fmt.Fprintln(os.Stderr, "\nRaw-specific flags: -tun ftraw0 -raw-address 10.77.0.2/24 -raw-mtu 1280 -obf-key-file raw.key")
-		fmt.Fprintln(os.Stderr, "Raw requires -mode udp, rtpopus/rtpopus2, a dedicated shared key, and the matching raw-server.")
+		fmt.Fprintln(os.Stderr, "Raw requires -mode udp, rtpopus/rtpopus2/rtpopus3, a dedicated shared key, and the matching raw-server.")
 		return nil
 	}
 	if err != nil {
@@ -76,8 +76,8 @@ func run() error {
 	if cfg.Proxy.Mode != config.ProxyModeUDP || cfg.Tunnel.Enabled() || cfg.Obf.Timing != 0 {
 		return errors.New("raw-client needs -mode udp, no -tunnel and no -obf-timing")
 	}
-	if cfg.Obf.Profile != config.ObfProfileRTPOpus && cfg.Obf.Profile != config.ObfProfileRTPOpus2 {
-		return errors.New("raw-client requires rtpopus or rtpopus2 encryption")
+	if !rawvpn.SupportedProfile(string(cfg.Obf.Profile)) {
+		return errors.New("raw-client requires rtpopus, rtpopus2 or rtpopus3 encryption")
 	}
 	if cfg.TURN.N*max(len(cfg.VK.Links), 1) > 64 {
 		return errors.New("raw-client supports at most 64 total TURN workers")
@@ -106,7 +106,7 @@ func run() error {
 	}
 	defer dev.Close()
 	logger := logx.New(cfg.Log.Debug)
-	logger.Infof("[VERSION] FturnRaw core %s", buildinfo.Version)
+	logger.Infof("[VERSION] FturnRaw core %s", buildinfo.CoreVersion())
 	logger.Infof("Experimental RAW client: TUN=%s address=%s MTU=%d; default route is not changed", dev.Name(), opts.Address, opts.MTU)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -133,7 +133,7 @@ func run() error {
 			logger.Infof("[BYPASS] IPv4 TCP/UDP: %d site rules, %d app rules, %d CIDRs; DNS remains Raw", len(rules.Sites), len(rules.Apps), len(rules.CIDRs))
 		}
 	}
-	return session.RunRaw(ctx, cfg, dev, prefix.Addr(), opts.MTU, logger)
+	return session.RunRaw(ctx, cfg, dev, prefix.Addr(), opts.MTU, opts.UplinkMode, logger)
 }
 
 func printHelp() {
@@ -145,9 +145,10 @@ Usage:
   -peer address          Raw server UDP endpoint on VPS (required)
   -links urls            Comma-separated VK call links (required)
   -obf-key-file path     Dedicated shared key file (or -obf-key HEX)
-  -obf-profile name      rtpopus2 (default) or rtpopus; must match server
+  -obf-profile name      rtpopus2 (default), rtpopus3 or rtpopus; server must accept it
   -tun name              TUN interface name (default ftraw0)
   -raw-address cidr      Client IPv4 interface (default 10.77.0.2/24)
+  -raw-uplink mode       packet (default) or experimental tcp-flow affinity
   -raw-mtu bytes         IP MTU 576..1500 (default 1280); must match server
   -control-interface n   Bind VK/TURN/DNS to a Windows adapter index
   -state-dir path        Persistent client identity and VK pause directory

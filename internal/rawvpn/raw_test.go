@@ -108,7 +108,7 @@ func startRawTestServer(t *testing.T, pc net.PacketConn, key []byte, mtus ...int
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- RunServer(ctx, pc, dev, ServerConfig{ClientAddress: netip.MustParseAddr("10.77.0.2"), MTU: mtu, Profile: "rtpopus2", Key: key})
+		done <- RunServer(ctx, pc, dev, ServerConfig{ClientAddress: netip.MustParseAddr("10.77.0.2"), MTU: mtu, Profile: "auto", Key: key})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -228,56 +228,58 @@ func startTURN(t *testing.T, udp bool) string {
 }
 
 func TestRawIPThroughRealTURN(t *testing.T) {
-	for _, udp := range []bool{true, false} {
-		name := "tcp"
-		if udp {
-			name = "udp"
-		}
-		t.Run(name, func(t *testing.T) {
-			turnAddr := startTURN(t, udp)
-			key := testKey(t)
-			serverPC := udpSocket(t)
-			serverDev, _, _ := startRawTestServer(t, serverPC, key, 1500)
-			clientDev := newTestDevice()
-			peer, err := net.ResolveUDPAddr("udp", serverPC.LocalAddr().String())
-			if err != nil {
-				t.Fatal(err)
+	for _, profile := range []string{"rtpopus2", "rtpopus3"} {
+		for _, udp := range []bool{true, false} {
+			name := profile + "/tcp"
+			if udp {
+				name = profile + "/udp"
 			}
-			ctx, cancel := context.WithCancel(context.Background())
-			var connected atomic.Int32
-			done := make(chan error, 1)
-			go func() {
-				done <- RunClient(ctx, clientDev, ClientConfig{Peer: peer, Address: netip.MustParseAddr("10.77.0.2"), MTU: 1500, Profile: "rtpopus2", Key: key, TransportUDP: udp, Streams: 3, Provider: staticProvider{addr: turnAddr}, Connected: &connected})
-			}()
-			t.Cleanup(func() {
-				cancel()
-				select {
-				case err := <-done:
-					if err != nil {
-						t.Errorf("client shutdown: %v", err)
+			t.Run(name, func(t *testing.T) {
+				turnAddr := startTURN(t, udp)
+				key := testKey(t)
+				serverPC := udpSocket(t)
+				serverDev, _, _ := startRawTestServer(t, serverPC, key, 1500)
+				clientDev := newTestDevice()
+				peer, err := net.ResolveUDPAddr("udp", serverPC.LocalAddr().String())
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithCancel(context.Background())
+				var connected atomic.Int32
+				done := make(chan error, 1)
+				go func() {
+					done <- RunClient(ctx, clientDev, ClientConfig{Peer: peer, Address: netip.MustParseAddr("10.77.0.2"), MTU: 1500, Profile: profile, Key: key, TransportUDP: udp, Streams: 3, Provider: staticProvider{addr: turnAddr}, Connected: &connected})
+				}()
+				t.Cleanup(func() {
+					cancel()
+					select {
+					case err := <-done:
+						if err != nil {
+							t.Errorf("client shutdown: %v", err)
+						}
+					case <-time.After(5 * time.Second):
+						t.Error("client did not stop")
 					}
-				case <-time.After(5 * time.Second):
-					t.Error("client did not stop")
+				})
+				deadline := time.Now().Add(8 * time.Second)
+				for connected.Load() != 3 && time.Now().Before(deadline) {
+					time.Sleep(10 * time.Millisecond)
+				}
+				if connected.Load() != 3 {
+					t.Fatalf("only %d/3 raw workers connected", connected.Load())
+				}
+				// Both directions at MTU and small sizes: IP/TCP headers are payload,
+				// not reconstructed by the relay and not passed through WireGuard/DTLS.
+				for _, size := range []int{64, 1280, 1350, 1351, 1492, 1500, 512} {
+					up := ipPacket("10.77.0.2", "1.1.1.1", size)
+					clientDev.input <- up
+					readPacket(t, serverDev, up)
+					down := ipPacket("1.1.1.1", "10.77.0.2", size)
+					serverDev.input <- down
+					readPacket(t, clientDev, down)
 				}
 			})
-			deadline := time.Now().Add(8 * time.Second)
-			for connected.Load() != 3 && time.Now().Before(deadline) {
-				time.Sleep(10 * time.Millisecond)
-			}
-			if connected.Load() != 3 {
-				t.Fatalf("only %d/3 raw workers connected", connected.Load())
-			}
-			// Both directions at MTU and small sizes: IP/TCP headers are payload,
-			// not reconstructed by the relay and not passed through WireGuard/DTLS.
-			for _, size := range []int{64, 1280, 1350, 1351, 1492, 1500, 512} {
-				up := ipPacket("10.77.0.2", "1.1.1.1", size)
-				clientDev.input <- up
-				readPacket(t, serverDev, up)
-				down := ipPacket("1.1.1.1", "10.77.0.2", size)
-				serverDev.input <- down
-				readPacket(t, clientDev, down)
-			}
-		})
+		}
 	}
 }
 

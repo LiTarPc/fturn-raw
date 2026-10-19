@@ -110,8 +110,7 @@ jobs:
         env:
           SERVER_TARGET: ${{ matrix.target }}
         run: |
-          $version=(Get-Content ui/newservice/wails.json -Raw | ConvertFrom-Json).info.productVersion
-          if ($env:GITHUB_REF -like 'refs/tags/*' -and $env:GITHUB_REF_NAME -ne ('v'+$version)) { throw 'Tag and product version must match' }
+          $version=(Get-Content internal/buildinfo/server-version.txt -Raw).Trim()
           ./scripts/build-raw-server.ps1 -Version $version -Targets $env:SERVER_TARGET
           ./scripts/test-raw-server-packages.ps1 -Version $version -Targets $env:SERVER_TARGET
       - uses: actions/upload-artifact@v4

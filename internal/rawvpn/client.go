@@ -29,6 +29,7 @@ type ClientConfig struct {
 	Key          []byte
 	Host, Port   string
 	TransportUDP bool
+	UplinkMode   string
 	Streams      int
 	Provider     provider.Provider
 	Connected    *atomic.Int32
@@ -42,6 +43,9 @@ func (c ClientConfig) validate() error {
 	}
 	if c.Streams < 1 || c.Streams > 64 {
 		return errors.New("raw: total TURN streams must be 1..64")
+	}
+	if err := validateUplink(c.UplinkMode); err != nil {
+		return err
 	}
 	if err := validateMTU(c.MTU); err != nil {
 		return err
@@ -63,7 +67,7 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 	defer cancel()
 	stop := context.AfterFunc(runCtx, func() { _ = dev.Close() })
 	defer stop()
-	packets := make(chan []byte, 256)
+	packets := newUplinkQueue(cfg.UplinkMode)
 	retirements := make(chan []byte, cfg.Streams*2)
 	fatal := make(chan error, 1)
 	report := func(err error) {
@@ -74,6 +78,20 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 		cancel()
 	}
 	var wg sync.WaitGroup
+	wg.Go(func() { packets.run(runCtx) })
+	cfg.Log.Infof("[RAW UPLINK] mode=%s queue_capacity=%d", packets.mode, uplinkCapacity)
+	wg.Go(func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				cfg.Log.Infof("[RAW UPLINK] mode=%s queued=%d enqueue_drop=%d path_drop=%d failovers=%d queue_wait_max_ms=%d", packets.mode, packets.queued.Load(), packets.drops.Load(), packets.pathDrops.Load(), packets.failovers.Load(), packets.waitMax.Swap(0)/int64(time.Millisecond))
+			}
+		}
+	})
 	wg.Go(func() {
 		buf := make([]byte, MaxMTU+1)
 		for {
@@ -90,10 +108,7 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 			}
 			buf[0] = frameData
 			packet := append([]byte(nil), buf[:n+1]...)
-			select {
-			case packets <- packet:
-			default:
-			} // bounded queue; IP owns retransmission
+			packets.enqueue(packet)
 		}
 	})
 	pacer := allocpace.New(allocpace.DefaultInterval)
@@ -134,7 +149,7 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 	}
 }
 
-func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, packets <-chan []byte, retirements chan []byte) error {
+func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, packets *uplinkQueue, retirements chan []byte) error {
 	if until := cfg.Provider.BackoffUntilUnix(); until > time.Now().Unix() {
 		select {
 		case <-ctx.Done():
@@ -196,12 +211,22 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 	if mtu != cfg.MTU {
 		return fmt.Errorf("raw: server MTU %d differs from client MTU %d", mtu, cfg.MTU)
 	}
+	path := packets.register(id)
+	defer packets.unregister(path)
+	var pinned <-chan uplinkPacket
+	if path != nil {
+		pinned = path.packets
+	}
 	if cfg.Connected != nil {
 		cfg.Connected.Add(1)
 		defer cfg.Connected.Add(-1)
 	}
 
-	cfg.Log.Infof("RAW stream %d ready: relay=%s client=%s MTU=%d (no WG/DTLS/KCP)", id, relay.LocalAddr(), cfg.Address, mtu)
+	transport := "tcp"
+	if cfg.TransportUDP {
+		transport = "udp"
+	}
+	cfg.Log.Infof("RAW stream %d ready: relay=%s client=%s MTU=%d profile=%s transport=%s (no WG/DTLS/KCP)", id, relay.LocalAddr(), cfg.Address, mtu, cfg.Profile, transport)
 	// Best effort shutdown frees the old worker immediately on quick reconnect.
 	defer func() {
 		var out [maxWire]byte
@@ -253,6 +278,7 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 	}()
 	readerJoined := false
 	defer func() {
+		packets.unregister(path)
 		cancel()
 		_ = relay.SetDeadline(time.Now())
 		if !readerJoined {
@@ -287,7 +313,10 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 			readerJoined = true
 			return err
 		case packet = <-retirements:
-		case packet = <-packets:
+		case queued := <-pinned:
+			packet = packets.take(queued)
+		case queued := <-packets.shared:
+			packet = packets.take(queued)
 		case <-ticker.C:
 			packet = []byte{framePing}
 		}

@@ -27,7 +27,7 @@ func main() {
 	}
 	defer windows.CloseHandle(m)
 	app := backend.NewApp()
-	err = wails.Run(&options.App{Title: "fturn Raw", Width: 450, Height: 720, MinWidth: 410, MinHeight: 580, AssetServer: &assetserver.Options{Assets: assets}, BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 255}, OnStartup: app.Startup, OnDomReady: app.DomReady, OnShutdown: app.Shutdown, OnBeforeClose: app.OnBeforeClose, Bind: []interface{}{app}, Windows: &wailswindows.Options{WebviewIsTransparent: false, WindowIsTranslucent: false}})
+	err = wails.Run(&options.App{Title: "fturn Raw", Width: 450, Height: 720, MinWidth: 410, MinHeight: 580, AssetServer: &assetserver.Options{Assets: assets}, BackgroundColour: &options.RGBA{R: 252, G: 250, B: 246, A: 255}, OnStartup: app.Startup, OnDomReady: app.DomReady, OnShutdown: app.Shutdown, OnBeforeClose: app.OnBeforeClose, Bind: []interface{}{app}, Windows: &wailswindows.Options{WebviewIsTransparent: false, WindowIsTranslucent: false}})
 	if err != nil {
 		panic(err)
 	}

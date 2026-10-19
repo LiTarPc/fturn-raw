@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestGlobalBypassAndImmutableSession(t *testing.T) {
@@ -100,7 +101,76 @@ func TestBypassEditingDoesNotDisconnect(t *testing.T) {
 	if ctx.Err() != nil || a.GetSnapshot().State != "connected" {
 		t.Fatal("editing disrupted connection")
 	}
-	if a.UpdateRUCIDR() == nil {
-		t.Fatal("CIDR update should wait until disconnected")
+}
+
+func TestCIDRUpdateDuringConnectionPreservesSession(t *testing.T) {
+	a := newApp(t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.cancel, a.state = cancel, "connected"
+	if err := a.bypass.save(BypassSettings{Enabled: true, RU: true}); err != nil {
+		t.Fatal(err)
+	}
+	path, err := a.bypass.prepare("full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		_, _ = w.Write([]byte("203.0.113.0/24\n"))
+	}))
+	defer srv.Close()
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	done := make(chan error, 1)
+	go func() { done <- a.updateRUCIDR(srv.Client(), srv.URL) }()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("update did not start while connected")
+	}
+	if !a.op.TryLock() {
+		t.Fatal("updater blocked disconnect/recovery")
+	}
+	a.op.Unlock()
+	if err := a.bypass.update(context.Background(), srv.Client(), srv.URL); err == nil {
+		t.Fatal("overlapping update was accepted")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if ctx.Err() != nil || a.GetSnapshot().State != "connected" {
+		t.Fatal("update disrupted connection")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("active bypass snapshot changed")
+	}
+	if got := newBypassService(a.dataDir).snapshot(); got.RUCount != 1 || got.Error != "" {
+		t.Fatal("new cache not persisted")
+	}
+	fresh, err := a.bypass.prepare("full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := bypassrules.Decode(bytes.NewReader(b))
+	if err != nil || len(c.CIDRs) != 1 || c.CIDRs[0] != "203.0.113.0/24" {
+		t.Fatal("next connection missed new cache")
 	}
 }

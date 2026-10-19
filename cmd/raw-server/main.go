@@ -13,9 +13,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/samosvalishe/free-turn-proxy/internal/buildinfo"
 	"github.com/samosvalishe/free-turn-proxy/internal/logx"
 	"github.com/samosvalishe/free-turn-proxy/internal/rawvpn"
-	"github.com/samosvalishe/free-turn-proxy/internal/wire"
 	"github.com/samosvalishe/free-turn-proxy/internal/wire/rtpopus"
 )
 
@@ -26,13 +26,19 @@ func main() {
 	}
 }
 func run() error {
+	for _, arg := range os.Args[1:] {
+		if arg == "-version" || arg == "--version" {
+			fmt.Println("FturnRaw server " + buildinfo.ServerVersion())
+			return nil
+		}
+	}
 	fs := flag.NewFlagSet("raw-server", flag.ContinueOnError)
 	listen := fs.String("listen", "0.0.0.0:56010", "UDP endpoint reached by TURN relay")
 	name := fs.String("tun", "ftraw0", "TUN interface name")
 	address := fs.String("address", "10.77.0.1/24", "server IPv4 interface CIDR")
 	clientIP := fs.String("client-ip", "10.77.0.2", "the only client IP authorized by this dedicated key")
 	mtu := fs.Int("mtu", rawvpn.DefaultMTU, "IP MTU, must match client (576..1500)")
-	profile := fs.String("obf-profile", wire.ProfileRTPOpus2, "encrypted RTP profile: rtpopus | rtpopus2")
+	profile := fs.String("obf-profile", "auto", "encrypted RTP profile: auto (rtpopus2 + rtpopus3) | rtpopus | rtpopus2 | rtpopus3")
 	keyHex := fs.String("obf-key", "", "dedicated 64-character hex shared key")
 	keyFile := fs.String("obf-key-file", "", "read shared key from file")
 	gen := fs.Bool("gen-obf-key", false, "generate a random shared key and exit")
@@ -63,8 +69,8 @@ func run() error {
 		}
 		*keyHex = strings.TrimSpace(string(b))
 	}
-	if *profile != wire.ProfileRTPOpus && *profile != wire.ProfileRTPOpus2 {
-		return errors.New("raw-server requires rtpopus or rtpopus2")
+	if *profile != "auto" && !rawvpn.SupportedProfile(*profile) {
+		return errors.New("raw-server requires auto, rtpopus, rtpopus2 or rtpopus3")
 	}
 	key, err := rtpopus.DecodeKey(true, *keyHex)
 	if err != nil {
@@ -89,6 +95,7 @@ func run() error {
 	}
 	defer pc.Close()
 	logger := logx.New(*debug)
+	logger.Infof("[VERSION] FturnRaw server %s; profiles=%s", buildinfo.ServerVersion(), *profile)
 	logger.Infof("Experimental RAW server: %s TUN=%s address=%s client=%s MTU=%d", pc.LocalAddr(), dev.Name(), *address, ip, *mtu)
 	logger.Infof("Configure IPv4 forwarding and NAT for internet access; see docs/raw-experiment.md")
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

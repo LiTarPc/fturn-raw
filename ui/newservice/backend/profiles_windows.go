@@ -279,7 +279,7 @@ func decodeProfileBook(data []byte) (profileBook, error) {
 	for i := range book.Profiles {
 		book.Profiles[i].Profile = profileDefaults(book.Profiles[i].Profile)
 		p := book.Profiles[i]
-		if p.Profile.StreamsPerCred < 1 || p.Profile.StreamsPerCred > 64 {
+		if (p.Profile.UplinkMode != "packet" && p.Profile.UplinkMode != "tcp-flow") || (p.Profile.Transport != "tcp" && p.Profile.Transport != "udp") || (p.Profile.ObfProfile != "rtpopus2" && p.Profile.ObfProfile != "rtpopus3") || p.Profile.StreamsPerCred < 1 || p.Profile.StreamsPerCred > 64 {
 			invalid = true
 		}
 		if p.ID == "" || seen[p.ID] || !validName(p.Name) {

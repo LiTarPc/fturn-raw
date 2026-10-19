@@ -32,9 +32,17 @@ Extract the entire Windows archive. Keep `wintun.dll` next to `raw-server.exe`. 
 
 Configure Windows IPv4 forwarding, routing/NAT and the UDP inbound firewall rule separately for the host's network. The Windows archive is a CLI core, without an installer or automatic service configuration. Its help/key-generation paths can run without creating a TUN adapter; a live server requires administrator privileges.
 
+## RTP profile and client transport
+
+New servers default to `-obf-profile auto` and accept both `rtpopus2` and `rtpopus3` on the same endpoint, after key authentication. You may explicitly restrict a server to either profile. Existing services with `-obf-profile rtpopus2` must be updated to `auto` before clients can select `rtpopus3`. Legacy `rtpopus` remains an explicit CLI-only option.
+
+Both profiles use ChaCha20-Poly1305. rtpopus3 changes the RTP extensions and header behaviour; it adds 4 bytes per encrypted datagram. It is not standard SRTP or a guarantee of indistinguishability from a real call.
+
+Windows profiles store `Transport` (`tcp`/`udp`) and `ObfProfile` (`rtpopus2`/`rtpopus3`). Missing values retain TCP + rtpopus2. New combinations use version 3 configuration links; older default links remain compatible. A transport change requires reconnecting. UDP availability depends on the selected underlying connection and the TURN service.
+
 ## Client configuration
 
-Configure the client with the server's public IPv4 and port 56010, the same generated key, MTU 1420, and your VK call link. The server-facing port is UDP; the Windows client's connection to VK TURN uses TCP. Protect `raw.key` and configuration links containing it.
+Configure the client with the server's public IPv4 and port 56010, the same generated key, MTU 1420, and your VK call link. The server-facing port is UDP. The Windows client can use TCP or UDP to TURN, independently of the RTP profile. Protect `raw.key` and configuration links containing it.
 
 Defaults are server address `10.77.0.1/24`, client `10.77.0.2`, TUN `ftraw0`. One physical client is supported per server/key instance. A second computer using the same instance can replace the first client's session. Stop with Ctrl+C.
 

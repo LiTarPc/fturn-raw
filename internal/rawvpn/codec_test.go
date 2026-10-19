@@ -18,7 +18,7 @@ func testKey(t testing.TB) []byte {
 }
 
 func TestCodecAuthenticationReplayAndDirection(t *testing.T) {
-	for _, profile := range []string{"rtpopus", "rtpopus2"} {
+	for _, profile := range []string{"rtpopus", "rtpopus2", "rtpopus3"} {
 		t.Run(profile, func(t *testing.T) {
 			key := testKey(t)
 			tokens := bytes.Repeat([]byte{0x47}, 32)
@@ -105,7 +105,7 @@ func TestReplayWindowReorderingAndBoundaries(t *testing.T) {
 }
 
 func TestRawDisallowsUnencryptedProfiles(t *testing.T) {
-	for _, profile := range []string{"none", "", "rtpopus3"} {
+	for _, profile := range []string{"none", "", "auto", "unknown"} {
 		if _, err := newCodec(profile, testKey(t), false, nil); err == nil {
 			t.Fatalf("unsupported profile %q accepted", profile)
 		}

@@ -10,7 +10,7 @@ import (
 )
 
 // Keep the outer datagram ceiling unchanged when the inner TUN MTU grows.
-// rtpopus2 + IPv4/UDP yields at most 1351+52+28 = 1431 bytes.
+// rtpopus2 + IPv4/UDP yields at most 1431 bytes; rtpopus3 adds 4 bytes.
 const (
 	maxSingleIP    = 1350
 	fragmentHeader = 13 // type, random packet ID, total length, offset

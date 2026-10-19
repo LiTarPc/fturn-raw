@@ -52,6 +52,10 @@ func (a *App) Connect() error {
 	a.op.Lock()
 	defer a.op.Unlock()
 	a.mu.Lock()
+	if a.installing {
+		a.mu.Unlock()
+		return errors.New("Запущено обновление приложения")
+	}
 	if a.cancel != nil {
 		a.mu.Unlock()
 		return nil
@@ -151,7 +155,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 	}
 	a.underlay = plan.Adapter
 	a.mu.Unlock()
-	a.appendLog("Внешнее соединение: " + plan.Adapter + ". TCP к VK TURN.")
+	a.appendLog("Внешнее соединение: " + plan.Adapter + ". " + strings.ToUpper(profileDefaults(p).Transport) + " к TURN; " + profileDefaults(p).ObfProfile + ".")
 	a.publish()
 	args := rawClientArgs(p, key, plan.ControlInterface, a.dataDir, bypassPath)
 	c := command(ctx, filepath.Join(runtimeDirectory(a.root), "raw-client.exe"), args...)
@@ -285,7 +289,7 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 	timeout := timedOut
 	timerMu.Unlock()
 	if timeout {
-		runErr = errors.New("Таймаут: TCP к VK TURN недоступен через выбранное соединение.")
+		runErr = errors.New("Таймаут: " + strings.ToUpper(profileDefaults(p).Transport) + " к TURN недоступен через выбранное соединение.")
 	}
 	if runErr != nil && ctx.Err() == nil {
 		if until := authRetryAt(a.dataDir, time.Now()); until > 0 {
@@ -363,7 +367,7 @@ func (a *App) Disconnect() error {
 
 func rawClientArgs(p Profile, key string, controlInterface int, dataDir, bypassPath string) []string {
 	p = profileDefaults(p)
-	args := []string{"-state-dir", coreStateDirectory(dataDir), "-peer", p.Server, "-links", p.VkLink, "-n", strconv.Itoa(p.Streams), "-streams-per-cred", strconv.Itoa(p.StreamsPerCred), "-transport", "tcp", "-tun", "ftraw0", "-raw-address", "10.77.0.2/24", "-raw-mtu", strconv.Itoa(p.Mtu), "-obf-profile", "rtpopus2", "-obf-key", key, "-control-interface", strconv.Itoa(controlInterface)}
+	args := []string{"-raw-uplink", p.UplinkMode, "-state-dir", coreStateDirectory(dataDir), "-peer", p.Server, "-links", p.VkLink, "-n", strconv.Itoa(p.Streams), "-streams-per-cred", strconv.Itoa(p.StreamsPerCred), "-transport", p.Transport, "-tun", "ftraw0", "-raw-address", "10.77.0.2/24", "-raw-mtu", strconv.Itoa(p.Mtu), "-obf-profile", p.ObfProfile, "-obf-key", key, "-control-interface", strconv.Itoa(controlInterface)}
 	if bypassPath != "" {
 		args = append(args, "-bypass-file", bypassPath)
 	}

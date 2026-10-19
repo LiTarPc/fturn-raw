@@ -1,9 +1,11 @@
 ﻿param(
  [ValidateSet('linux-amd64','linux-arm64','windows-amd64')][string[]]$Targets=@('linux-amd64','linux-arm64','windows-amd64'),
- [string]$Version='0.1.1'
+ [string]$Version=''
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
+if(-not $Version){$Version=([IO.File]::ReadAllText((Join-Path $root 'internal/buildinfo/server-version.txt'))).Trim()}
+if($Version -notmatch '^\d+\.\d+\.\d+$'){throw 'Version must be major.minor.patch'}
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 function Assert($condition,$message){if(-not $condition){throw $message}}
 $hostOS=if([Environment]::OSVersion.Platform -eq 'Win32NT'){'windows'}else{'linux'}
@@ -14,7 +16,7 @@ foreach($target in $Targets){
  $path=Join-Path $root "dist/fturn-raw-server-$Version-$target.zip"
  $zip=[IO.Compression.ZipFile]::OpenRead($path)
  try{
-  $expected=@($binary,'LICENSE','README.md','THIRD-PARTY-NOTICES.txt')
+  $expected=@($binary,'LICENSE','README.md','raw-versions.md','THIRD-PARTY-NOTICES.txt')
   if($platform -eq 'windows'){$expected+=@('wintun.dll','WINTUN-LICENSE.txt')}
   Assert (-not(Compare-Object ($expected | Sort-Object) (@($zip.Entries.FullName) | Sort-Object))) "Unexpected archive contents: $target"
   $stream=$zip.GetEntry($binary).Open();$memory=[IO.MemoryStream]::new()
@@ -34,7 +36,7 @@ foreach($target in $Targets){
  $manifest=Get-Content -LiteralPath (Join-Path $root "dist/SERVER-SHA256SUMS-$target") -Raw
  Assert ($manifest.Trim() -eq (((Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant())+'  '+[IO.Path]::GetFileName($path))) "Checksum mismatch: $target"
  if($platform -eq $hostOS -and $arch -eq $hostArch){
-  $exe=Join-Path $root ("dist/server-$target/$binary")
+  $exe=Join-Path $root ("dist/server-$Version-$target/$binary")
   $info=[Diagnostics.ProcessStartInfo]::new()
   $info.FileName=$exe;$info.Arguments='-help';$info.UseShellExecute=$false;$info.CreateNoWindow=$true
   $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
@@ -42,5 +44,11 @@ foreach($target in $Targets){
   try{$output=$process.StandardOutput.ReadToEnd()+$process.StandardError.ReadToEnd();$process.WaitForExit();$exitCode=$process.ExitCode}finally{$process.Dispose()}
   Assert ($exitCode -eq 0 -and $output -match 'obf-key-file' -and $output -match 'client-ip') "Native server help failed: $target"
  }
- Write-Host "PASS: $target package, CPU, SHA256 and native help when supported"
+ if($platform -eq $hostOS -and $arch -eq $hostArch){
+  $info.Arguments='--version'
+  $process=[Diagnostics.Process]::Start($info)
+  try{$versionOutput=$process.StandardOutput.ReadToEnd().Trim();$versionError=$process.StandardError.ReadToEnd();$process.WaitForExit();$versionExit=$process.ExitCode}finally{$process.Dispose()}
+  Assert ($versionExit -eq 0 -and $versionOutput -eq ('FturnRaw server '+$Version) -and -not $versionError) "Native server version mismatch: $target"
+ }
+ Write-Host "PASS: $target package, CPU, SHA256 and native help/version when supported"
 }

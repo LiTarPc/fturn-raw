@@ -16,7 +16,7 @@ import (
 )
 
 // RunRaw reuses the VK credential provider without creating a legacy DTLS session.
-func RunRaw(ctx context.Context, cfg *config.Client, dev rawvpn.Device, address netip.Addr, mtu int, logger logx.Logger) error {
+func RunRaw(ctx context.Context, cfg *config.Client, dev rawvpn.Device, address netip.Addr, mtu int, uplinkMode string, logger logx.Logger) error {
 	if cfg.Proxy.Mode != config.ProxyModeUDP || cfg.Tunnel.Enabled() {
 		return errors.New("raw-client requires -mode udp and no embedded WG/AWG tunnel")
 	}
@@ -61,7 +61,7 @@ func RunRaw(ctx context.Context, cfg *config.Client, dev rawvpn.Device, address 
 	return rawvpn.RunClient(ctx, dev, rawvpn.ClientConfig{
 		Peer: peer, Address: address, MTU: mtu, Profile: string(cfg.Obf.Profile), Key: cfg.Obf.Key,
 		Host: cfg.TURN.Host, Port: cfg.TURN.Port, TransportUDP: cfg.TURN.TransportUDP,
-		Streams: total, Provider: prov, Connected: &connected, OnTURN: onTURN, Log: logger,
+		UplinkMode: uplinkMode, Streams: total, Provider: prov, Connected: &connected, OnTURN: onTURN, Log: logger,
 	})
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/samosvalishe/free-turn-proxy/internal/wire"
 	"github.com/samosvalishe/free-turn-proxy/internal/wire/rtpopus"
 	"github.com/samosvalishe/free-turn-proxy/internal/wire/rtpopus2"
+	"github.com/samosvalishe/free-turn-proxy/internal/wire/rtpopus3"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -35,7 +36,13 @@ func deriveKey(master []byte, direction string, tokens []byte) []byte {
 	return h.Sum(nil)
 }
 
+// SupportedProfile reports wire profiles implemented by the Raw protocol.
+func SupportedProfile(profile string) bool {
+	return profile == wire.ProfileRTPOpus || profile == wire.ProfileRTPOpus2 || profile == wire.ProfileRTPOpus3
+}
+
 type codec struct {
+	profile     string
 	serverToken [16]byte // authenticated remote session identity, for retirement notices
 	send        wire.Codec
 	recv        cipher.AEAD
@@ -96,8 +103,10 @@ func newCodec(profile string, key []byte, server bool, tokens []byte) (*codec, e
 		send, err = rtpopus.NewConn(sendKey, server)
 	case wire.ProfileRTPOpus2:
 		send, err = rtpopus2.NewConn(sendKey, server)
+	case wire.ProfileRTPOpus3:
+		send, err = rtpopus3.NewConn(sendKey, server)
 	default:
-		return nil, fmt.Errorf("raw: profile must be rtpopus or rtpopus2 (got %q)", profile)
+		return nil, fmt.Errorf("raw: profile must be rtpopus, rtpopus2 or rtpopus3 (got %q)", profile)
 	}
 	if err != nil {
 		return nil, err
@@ -106,7 +115,7 @@ func newCodec(profile string, key []byte, server bool, tokens []byte) (*codec, e
 	if err != nil {
 		return nil, err
 	}
-	return &codec{send: send, recv: recv, header: send.HeaderLen(), windows: make(map[[4]byte]*replayWindow)}, nil
+	return &codec{profile: profile, send: send, recv: recv, header: send.HeaderLen(), windows: make(map[[4]byte]*replayWindow)}, nil
 }
 
 func (c *codec) encode(dst, plain []byte) (int, error) { return c.send.WrapInto(dst, plain) }
@@ -117,10 +126,16 @@ func (c *codec) decode(dst, wireBytes []byte) ([]byte, error) {
 	if len(wireBytes) < c.header+16 || len(wireBytes) > maxWire {
 		return nil, errors.New("raw: invalid encrypted packet length")
 	}
-	if wireBytes[0] != 0x80 && c.header == 24 || wireBytes[0] != 0x90 && c.header == 36 || wireBytes[1]&0x7f != 111 {
+	version := byte(0x90)
+	if c.header == 24 {
+		version = 0x80
+	}
+	if wireBytes[0] != version || wireBytes[1]&0x7f != 111 {
 		return nil, errors.New("raw: invalid RTP header")
 	}
-	if c.header == 36 && (binary.BigEndian.Uint16(wireBytes[12:14]) != 0xbede || binary.BigEndian.Uint16(wireBytes[14:16]) != 2) {
+	// The profile fixes both extension size and nonce offset; authenticate the
+	// whole RTP header before using its counter for replay protection.
+	if c.header != 24 && (binary.BigEndian.Uint16(wireBytes[12:14]) != 0xbede || binary.BigEndian.Uint16(wireBytes[14:16]) != uint16((c.header-28)/4)) {
 		return nil, errors.New("raw: invalid RTP extension")
 	}
 	nonce := wireBytes[c.header-12 : c.header]

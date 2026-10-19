@@ -1,5 +1,4 @@
 import {IconPlugConnected,IconPlus,IconPower,IconLoader2} from '@tabler/icons-react';
-import {native} from '../api';
 import type {Snapshot,SavedProfile} from '../api';
 import {ProfilePicker} from './ProfilePicker';
 import {bytes,duration} from '../format';
@@ -20,9 +19,7 @@ export function ConnectionScreen({snapshot:s,busy,running,onToggle,onAdd,onEdit,
    <div className="stats-card"><div className="stats-col"><span className="stats-label">Принято</span><span className="stats-value">{bytes(s?.rx??0)}</span></div><div className="stats-divider"/><div className="stats-col"><span className="stats-label">Отправлено</span><span className="stats-value">{bytes(s?.tx??0)}</span></div></div>
   </div>
   <div className="status-bar">
-   <ProfilePicker profiles={s?.profiles??[]} activeId={s?.activeId??''} disabled={running||busy} onSelect={onSelect} onEdit={onEdit} onDelete={onDelete}/>
-   <p className="profile-caption">{s?.profile.RouteMode==='full'?(s?.bypassActive?'IPv4 через Raw с обходом':'Весь IPv4 через Raw'):'Только соединение с сервером'} · MTU {s?.profile.Mtu??1420}<br/>Внешнее соединение: {s?.underlay||'автоматически'}<br/>{s?.profile.RouteMode==='full'?'При подключении: IPv6 блокируется, DNS идёт через Raw.':'IPv6 и DNS работают в текущем режиме.'}</p>
-   {!native&&<p className="hint">Предпросмотр интерфейса. Подключение доступно в приложении Windows.</p>}
+   <ProfilePicker profiles={s?.profiles??[]} activeId={s?.activeId??''} disabled={running||busy} busy={busy} onSelect={onSelect} onEdit={onEdit} onDelete={onDelete}/>
   </div>
  </main>
 }

@@ -4,7 +4,7 @@
 !include "WinVer.nsh"
 !include "LogicLib.nsh"
 !ifndef VERSION
- !define VERSION "0.1.9"
+ !define VERSION "0.1.13"
 !endif
 !ifndef PAYLOAD_DIR
  !error "PAYLOAD_DIR is required"
@@ -25,8 +25,7 @@
 !endif
 Name "${APP_NAME}"
 OutFile "${OUTPUT_FILE}"
-InstallDir "$PROGRAMFILES64\${APP_NAME}"
-InstallDirRegKey ${REG_HIVE} "${REG_KEY}" "InstallLocation"
+InstallDir ""
 SetCompressor /SOLID lzma
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
@@ -65,9 +64,12 @@ Function .onInit
 !else
  SetShellVarContext all
 !endif
- ReadRegStr $0 ${REG_HIVE} "${REG_KEY}" "InstallLocation"
- ${If} $0 != ""
-  StrCpy $INSTDIR $0
+ ; /D= is already reflected in INSTDIR; only infer a target when it was omitted.
+ ${If} $INSTDIR == ""
+  ReadRegStr $INSTDIR ${REG_HIVE} "${REG_KEY}" "InstallLocation"
+  ${If} $INSTDIR == ""
+   StrCpy $INSTDIR "$PROGRAMFILES64\${APP_NAME}"
+  ${EndIf}
  ${EndIf}
 FunctionEnd
 Function un.onInit

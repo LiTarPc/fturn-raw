@@ -16,6 +16,7 @@ foreach($name in @('profiles.json','app-settings.json')){
  $path=Join-Path $appData $name
  $before[$name]=if(Test-Path -LiteralPath $path){(Get-FileHash -LiteralPath $path).Hash}else{''}
 }
+$reg='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FturnRawInstallerTest'
 function Install-Test {
  $process=Start-Process -FilePath $setup -ArgumentList '/S',("/D="+$target) -WindowStyle Hidden -Wait -PassThru
  Assert ($process.ExitCode -eq 0) 'NSIS silent install failed'
@@ -33,10 +34,11 @@ $userFile=Join-Path $target 'user-notes.txt'
 [IO.File]::WriteAllText($userFile,'preserve-during-uninstall')
 # Simulate owned files left by the former flat installer; preserve user files.
 foreach($name in @('raw-client.exe','wintun.dll','routes.ps1','README.md','LICENSE','setup-support.ps1')){[IO.File]::WriteAllText((Join-Path $target $name),'legacy owned file')}
+# Explicit update target must win over a different registered install directory.
+Set-ItemProperty -LiteralPath $reg -Name InstallLocation -Value (Join-Path $testRoot 'other registered install')
 Install-Test
 foreach($name in @('raw-client.exe','wintun.dll','routes.ps1','README.md','LICENSE','setup-support.ps1')){Assert (-not(Test-Path -LiteralPath (Join-Path $target $name))) ('Upgrade retained flat file: '+$name)}
 Assert ((Get-Content -LiteralPath $personal -Raw) -eq '{"legacy":"preserve-during-upgrade"}') 'Upgrade overwrote legacy settings'
-$reg='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FturnRawInstallerTest'
 Assert ((Get-ItemProperty -LiteralPath $reg).DisplayVersion -eq $expectedVersion) 'Uninstall registration missing'
 $uninstaller=Join-Path $target 'Uninstall.exe'
 $process=Start-Process -FilePath $uninstaller -ArgumentList '/S',("_?="+$target) -WindowStyle Hidden -Wait -PassThru

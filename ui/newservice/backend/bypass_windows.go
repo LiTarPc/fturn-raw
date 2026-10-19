@@ -31,6 +31,7 @@ type BypassSnapshot struct {
 }
 type bypassService struct {
 	mu                sync.Mutex
+	updateMu          sync.Mutex
 	dir               string
 	value             BypassSettings
 	cidrs             []string
@@ -148,6 +149,10 @@ func (s *bypassService) prepare(mode string) (string, error) {
 	return path, nil
 }
 func (s *bypassService) update(ctx context.Context, client *http.Client, url string) error {
+	if !s.updateMu.TryLock() {
+		return errors.New("Обновление RU CIDR уже выполняется")
+	}
+	defer s.updateMu.Unlock()
 	req, e := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if e != nil {
 		return e
@@ -182,28 +187,30 @@ func (a *App) SaveBypassSettings(v BypassSettings) error {
 	a.publish()
 	return nil
 }
+
+// The updater uses ordinary system routing and DNS. With a full Raw connection
+// it follows that tunnel; it never binds to the core's underlay or edits routes.
 func (a *App) UpdateRUCIDR() error {
-	a.op.Lock()
-	defer a.op.Unlock()
-	a.mu.Lock()
-	running := a.cancel != nil
-	ctx := a.ctx
-	a.mu.Unlock()
-	if running {
-		return errors.New("Обновление RU CIDR доступно после отключения Raw; новые правила применятся при следующем подключении")
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) > 3 || req.URL.Scheme != "https" || req.URL.Host != "www.ipdeny.com" {
 			return errors.New("unexpected IPdeny redirect")
 		}
 		return nil
 	}}
-	if e := a.bypass.update(ctx, client, bypassrules.RUURL); e != nil {
+	return a.updateRUCIDR(client, bypassrules.RUURL)
+}
+
+func (a *App) updateRUCIDR(client *http.Client, url string) error {
+	// Network I/O must not hold a.op: disconnect/recovery remain available.
+	a.mu.Lock()
+	ctx := a.ctx
+	a.mu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if e := a.bypass.update(ctx, client, url); e != nil {
 		return fmt.Errorf("Не удалось обновить RU CIDR; прежний список сохранён: %w", e)
 	}
 	a.publish()
