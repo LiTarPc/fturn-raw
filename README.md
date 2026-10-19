@@ -2,6 +2,8 @@
 
 Raw IPv4-туннель через TURN мессенджера. Клиент для Windows 10/11 x64; серверы для Linux amd64/arm64 и Windows x64.
 
+[Клиентские ядра Linux и Android 0.1.12](docs/raw-platform-clients.md)
+
 [Скачать](https://github.com/LiTarPc/fturn-raw/releases/latest) · [Настройка сервера](docs/raw-server.md)
 
 ## Начало работы

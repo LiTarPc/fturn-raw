@@ -1,4 +1,4 @@
-//go:build (!linux && !windows) || android
+//go:build !linux && !windows && !android
 
 package rawvpn
 
@@ -8,5 +8,5 @@ import (
 )
 
 func openDevice(string, netip.Prefix, int) (Device, error) {
-	return nil, errors.New("raw: this experimental CLI supports Windows and Linux; Android TUN-fd integration is not implemented")
+	return nil, errors.New("raw: this experimental CLI supports Windows, Linux and Android")
 }

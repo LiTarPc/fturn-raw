@@ -137,7 +137,7 @@ func run() error {
 }
 
 func printHelp() {
-	fmt.Fprint(os.Stderr, `Experimental fturn Raw IP client (Windows / Linux)
+	fmt.Fprint(os.Stderr, `Experimental fturn Raw IP client (Windows / Linux / Android)
 
 Usage:
   raw-client -peer VPS_IP:56010 -links VK_CALL_URL -obf-key-file raw.key [options]
@@ -167,8 +167,9 @@ Usage:
   -debug                 Debug logs
   -gen-obf-key           Print a new key and exit
 
-Run with administrator/root privileges. This client creates/configures its
-TUN interface and preserves the existing default route. Start with ping
+Windows/Linux and rooted Termux require administrator/root privileges.
+The Android application uses a VpnService TUN descriptor instead of root.
+Direct TUN builds preserve the existing default route. Start with ping
 10.77.0.1. See docs/raw-experiment.md for NAT and speed measurements.
 Legacy DTLS servers, WG/AWG configuration and subscriptions are not supported.
 `)

@@ -7,7 +7,9 @@
 | Raw server core | 0.1.10 |
 
 The interface uses the burgundy palette and reports both application and actual
-client-core versions. This release retains the exact client core from 0.1.12.
+client-core versions. The Windows package retains the exact client core from 0.1.12.
+Separately added Linux and Android 0.1.12 packages use the same transport, with
+platform-specific TUN adapters; see raw-platform-clients.md.
 The separately published 0.1.10 server supports one client process per key;
 connecting another process replaces the previous client's sessions.
 The settings card reads `runtime/raw-client.exe --version`; server version is

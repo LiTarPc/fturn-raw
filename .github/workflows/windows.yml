@@ -25,6 +25,27 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('servers=' + str(bool(plan['serverPackages'])).lower() + '\n')
           PY
+  platform-clients:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+      - name: Native Linux transport checks
+        run: go test ./internal/rawvpn ./internal/config ./internal/session ./cmd/raw-client
+      - name: Build Linux and Android clients
+        shell: pwsh
+        run: ./scripts/build-platform-clients.ps1
+      - name: Check Linux executable
+        run: |
+          dist/platform-clients/linux-amd64/raw-client --version
+          dist/platform-clients/linux-amd64/raw-client --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fturn-raw-platform-clients
+          path: dist/platform-clients/
+          if-no-files-found: error
   windows:
     runs-on: windows-latest
     steps:
