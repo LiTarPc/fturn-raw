@@ -42,7 +42,7 @@ foreach($target in $Targets){
   $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
   $process=[Diagnostics.Process]::Start($info)
   try{$output=$process.StandardOutput.ReadToEnd()+$process.StandardError.ReadToEnd();$process.WaitForExit();$exitCode=$process.ExitCode}finally{$process.Dispose()}
-  Assert ($exitCode -eq 0 -and $output -match 'obf-key-file' -and $output -match 'client-ip') "Native server help failed: $target"
+  Assert ($exitCode -eq 0 -and $output -match 'obf-key-file' -and $output -match 'client-ip' -and $output -match 'max-devices') "Native server help failed: $target"
  }
  if($platform -eq $hostOS -and $arch -eq $hostArch){
   $info.Arguments='--version'

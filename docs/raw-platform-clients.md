@@ -1,8 +1,11 @@
-# Raw client 0.1.12: Linux and Android
+# Raw client 1.0.0: Linux and Android
 
-These are clients for Raw server 0.1.10 and its existing single-client protocol.
-They do not enable multiple devices sharing one server/key. The Windows UI is
-version 0.1.13; the client transport version is independently 0.1.12.
+These are Raw client core 1.0.0 builds. Raw server 1.0.0 enables up to three
+concurrent client processes sharing one configuration link/key by default.
+Server-side forwarding/NAT must cover the entire translated address pool.
+The previous server 0.1.10 still permits only one process per key. The Windows
+UI remains version 0.1.13; client and server core versions are independently
+1.0.0. See docs/raw-server.md and docs/raw-versions.md.
 
 ## Linux amd64 / arm64
 
@@ -25,7 +28,7 @@ The CLI takes explicit arguments; it does not import `fturnraw://` links.
 
 ## Android application (arm64-v8a, no root)
 
-`fturn-raw-client-0.1.12-android-arm64-vpnservice.zip` contains
+`fturn-raw-client-1.0.0-android-arm64-vpnservice.zip` contains
 `arm64-v8a/libfturnraw.so`. This is a PIE executable launched by ProcessBuilder,
 not a JNI library or an AAR. It matches the existing Fturn RAW Android app:
 
@@ -46,7 +49,7 @@ this executable. The existing application imports `fturnraw://` configurations.
 
 ## Android Termux CLI (arm64, root required)
 
-`fturn-raw-client-0.1.12-android-arm64-termux.zip` contains `raw-client`.
+`fturn-raw-client-1.0.0-android-arm64-termux.zip` contains `raw-client`.
 This variant uses the `fturntermux` Go build tag to create/configure `/dev/net/tun`
 directly. It does not expect a VpnService descriptor and is distinct from the
 application executable. It requires root, kernel TUN support, access allowed by

@@ -36,7 +36,8 @@ func run() error {
 	listen := fs.String("listen", "0.0.0.0:56010", "UDP endpoint reached by TURN relay")
 	name := fs.String("tun", "ftraw0", "TUN interface name")
 	address := fs.String("address", "10.77.0.1/24", "server IPv4 interface CIDR")
-	clientIP := fs.String("client-ip", "10.77.0.2", "the only client IP authorized by this dedicated key")
+	clientIP := fs.String("client-ip", "10.77.0.2", "shared client IPv4 and first server-side address in the device pool")
+	maxDevices := fs.Int("max-devices", rawvpn.DefaultMaxDevices, "simultaneous devices per shared key (1..64)")
 	mtu := fs.Int("mtu", rawvpn.DefaultMTU, "IP MTU, must match client (576..1500)")
 	profile := fs.String("obf-profile", "auto", "encrypted RTP profile: auto (rtpopus2 + rtpopus3) | rtpopus | rtpopus2 | rtpopus3")
 	keyHex := fs.String("obf-key", "", "dedicated 64-character hex shared key")
@@ -81,8 +82,14 @@ func run() error {
 		return errors.New("-client-ip must be a unicast IPv4 address")
 	}
 	prefix, err := netip.ParsePrefix(*address)
-	if err != nil || !prefix.Addr().Is4() || !prefix.Contains(ip) || prefix.Addr() == ip {
-		return errors.New("client IP must be inside the server IPv4 subnet and differ from server address")
+	if err != nil {
+		return errors.New("-address must be a server IPv4 CIDR")
+	}
+	if err := rawvpn.ValidateClientPool(prefix, ip, *maxDevices); err != nil {
+		return err
+	}
+	if *maxDevices < 1 {
+		return errors.New("-max-devices must be between 1 and 64")
 	}
 	dev, err := rawvpn.OpenDevice(*name, *address, *mtu)
 	if err != nil {
@@ -97,8 +104,8 @@ func run() error {
 	logger := logx.New(*debug)
 	logger.Infof("[VERSION] FturnRaw server %s; profiles=%s", buildinfo.ServerVersion(), *profile)
 	logger.Infof("Experimental RAW server: %s TUN=%s address=%s client=%s MTU=%d", pc.LocalAddr(), dev.Name(), *address, ip, *mtu)
-	logger.Infof("Configure IPv4 forwarding and NAT for internet access; see docs/raw-experiment.md")
+	logger.Infof("RAW device limit=%d; configure IPv4 forwarding and NAT for the entire client address pool; see docs/raw-server.md", *maxDevices)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	return rawvpn.RunServer(ctx, pc, dev, rawvpn.ServerConfig{ClientAddress: ip, MTU: *mtu, Profile: *profile, Key: key, Log: logger})
+	return rawvpn.RunServer(ctx, pc, dev, rawvpn.ServerConfig{ClientAddress: ip, MaxDevices: *maxDevices, MTU: *mtu, Profile: *profile, Key: key, Log: logger})
 }

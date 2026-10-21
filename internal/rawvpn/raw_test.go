@@ -321,7 +321,7 @@ func (cancelProvider) GetCredentials(ctx context.Context, _ int) (provider.Crede
 	return provider.Credentials{}, ctx.Err()
 }
 
-func TestNewClientProcessRetiresOldWorkers(t *testing.T) {
+func TestNewClientProcessKeepsOldWorkers(t *testing.T) {
 	key := testKey(t)
 	serverPC := udpSocket(t)
 	dev, _, _ := startRawTestServer(t, serverPC, key)
@@ -347,6 +347,10 @@ func TestNewClientProcessRetiresOldWorkers(t *testing.T) {
 	good := ipPacket("10.77.0.2", "1.1.1.1", 64)
 	good[63] = 2
 	if err := writeFrame(newPC, serverPC.LocalAddr(), newCodec, buf, append([]byte{frameData}, good...)); err != nil {
+		t.Fatal(err)
+	}
+	readPacket(t, dev, oldPacket)
+	if err := translateIPv4(good, cfg.Address, cfg.Address.Next(), true); err != nil {
 		t.Fatal(err)
 	}
 	readPacket(t, dev, good)

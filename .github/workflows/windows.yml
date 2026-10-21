@@ -1,7 +1,7 @@
 name: Raw packages
 on:
   push:
-    branches: [main]
+    branches: [main, codex/raw-1.0.0]
     tags: ['v*.*.*']
   pull_request:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
         with:
           go-version: '1.26.6'
       - name: Native Linux transport checks
-        run: go test ./internal/rawvpn ./internal/config ./internal/session ./cmd/raw-client
+        run: go test ./internal/rawvpn ./internal/config ./internal/session ./cmd/raw-client ./cmd/raw-server
       - name: Build Linux and Android clients
         shell: pwsh
         run: ./scripts/build-platform-clients.ps1
@@ -71,7 +71,7 @@ jobs:
       - name: Protocol tests
         shell: pwsh
         run: |
-          go test ./internal/bypass ./internal/rawvpn ./internal/session ./internal/config ./internal/provider/vk/...
+          go test ./internal/bypass ./internal/rawvpn ./cmd/raw-server ./internal/session ./internal/config ./internal/provider/vk/...
           if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
           Push-Location shared/bypass
           go test ./...

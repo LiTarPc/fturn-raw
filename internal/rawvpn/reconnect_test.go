@@ -307,7 +307,7 @@ func TestSameWorkerHandshakeKeepsFreshSessionKeys(t *testing.T) {
 
 func TestReplacementAtWorkerLimit(t *testing.T) {
 	key := testKey(t)
-	s := &rawServer{cfg: ServerConfig{Log: nopTestLogger{}}, pc: udpSocket(t), sessions: map[string]*serverSession{}}
+	s := &rawServer{cfg: ServerConfig{ClientAddress: netip.MustParseAddr("10.77.0.2"), Log: nopTestLogger{}}, pc: udpSocket(t), sessions: map[string]*serverSession{}}
 	var group [16]byte
 	group[0] = 1
 	for i := 1; i <= 64; i++ {

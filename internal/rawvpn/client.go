@@ -19,6 +19,9 @@ import (
 	"github.com/samosvalishe/free-turn-proxy/internal/proxy/udprelay"
 )
 
+// ErrDeviceLimit means the shared server key has no free concurrent device slot.
+var ErrDeviceLimit = errors.New("raw: server device limit reached; disconnect another device and retry")
+
 type ClientConfig struct {
 	workerToken  [16]byte // stable across reconnects of one logical worker
 	group        [16]byte
@@ -127,7 +130,7 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 				if runCtx.Err() != nil {
 					return
 				}
-				if errors.Is(err, provider.ErrFatalNoStreams) {
+				if errors.Is(err, provider.ErrFatalNoStreams) || errors.Is(err, ErrDeviceLimit) {
 					report(err)
 					return
 				}
@@ -227,6 +230,7 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 		transport = "udp"
 	}
 	cfg.Log.Infof("RAW stream %d ready: relay=%s client=%s MTU=%d profile=%s transport=%s (no WG/DTLS/KCP)", id, relay.LocalAddr(), cfg.Address, mtu, cfg.Profile, transport)
+	defer cfg.Log.Infof("RAW stream %d closed", id)
 	// Best effort shutdown frees the old worker immediately on quick reconnect.
 	defer func() {
 		var out [maxWire]byte
@@ -394,6 +398,9 @@ func clientHandshake(ctx context.Context, pc net.PacketConn, peer net.Addr, cfg 
 				continue
 			}
 			if session != nil {
+				if len(plain) == 1 && plain[0] == frameDeviceLimit {
+					return nil, 0, ErrDeviceLimit
+				}
 				if len(plain) == 1 && plain[0] == frameReady {
 					_ = pc.SetReadDeadline(time.Time{})
 					return session, mtu, nil

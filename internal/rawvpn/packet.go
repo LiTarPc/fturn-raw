@@ -17,6 +17,7 @@ const (
 	frameClose
 	frameFragment
 	frameRetire
+	frameDeviceLimit
 )
 
 // ipv4 checks lengths before inspecting addresses, including fragmented IPv4.
