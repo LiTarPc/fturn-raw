@@ -354,7 +354,7 @@ PY
  ENABLED_BY_US=1
  systemctl enable --now "$SERVICE"
  local attempt
- for attempt in {1..15}; do if ready 2>/dev/null; then break; fi; sleep 1; done
+ for ((attempt=1; attempt<=15; attempt+=1)); do if ready 2>/dev/null; then break; fi; sleep 1; done
  ready || die "Сервер не запустился; проверьте journalctl -u $SERVICE"
  sleep 1
  ready || die 'Сервер остановился после запуска'
