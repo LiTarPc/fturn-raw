@@ -16,6 +16,18 @@ Packages are published at https://github.com/LiTarPc/fturn-raw/releases:
 
 Every archive contains the server binary, this guide, the core license and dependency notices. No server keys, VK links or personal configurations are bundled. Verify the archive against `SERVER-SHA256SUMS` in the release.
 
+## Linux quick-start
+
+For a new Debian/Ubuntu systemd server, download the standalone
+[quick-start.sh](https://github.com/LiTarPc/fturn-raw/releases/download/v1.0.0/quick-start.sh)
+from release v1.0.0 and run `sudo bash quick-start.sh`. It verifies the server
+archive, detects amd64/arm64 and the egress interface, configures systemd,
+IPv4 forwarding and scoped NAT for three devices, and preserves the key.
+Use `--check` for a read-only preflight and `--uninstall` to remove its own
+installation while retaining the key. It refuses to overwrite an existing
+manual/staged installation. See [the quick-start guide](server-quick-start.md)
+for options and configuration-link export.
+
 ## Linux
 
 Extract the archive matching the server CPU, then mark the binary executable (ZIP extraction may not preserve executable permissions):

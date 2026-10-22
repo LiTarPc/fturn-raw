@@ -1,0 +1,33 @@
+name: Server quick-start
+on:
+  push:
+    branches: [codex/raw-1.0.0]
+    paths:
+      - scripts/debian/quick-start.sh
+      - scripts/test-server-quick-start.py
+      - .github/workflows/server-quick-start.yml
+  pull_request:
+    paths:
+      - scripts/debian/quick-start.sh
+      - scripts/test-server-quick-start.py
+      - .github/workflows/server-quick-start.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  quick-start:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash syntax and help
+        run: |
+          bash -n scripts/debian/quick-start.sh
+          bash scripts/debian/quick-start.sh --help
+      - name: ShellCheck
+        run: shellcheck scripts/debian/quick-start.sh
+      - name: Isolated installer, rollback and firewall tests
+        run: sudo env PATH="$PATH" python3 scripts/test-server-quick-start.py
