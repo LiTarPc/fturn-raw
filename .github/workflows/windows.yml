@@ -37,6 +37,8 @@ jobs:
       - name: Build Linux and Android clients
         shell: pwsh
         run: ./scripts/build-platform-clients.ps1
+      - name: Package and verify platform clients
+        run: python3 scripts/package-platform-clients.py
       - name: Check Linux executable
         run: |
           dist/platform-clients/linux-amd64/raw-client --version
@@ -44,7 +46,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: fturn-raw-platform-clients
-          path: dist/platform-clients/
+          path: |
+            dist/fturn-raw-client-*.zip
+            dist/CLIENT-SHA256SUMS
           if-no-files-found: error
   windows:
     runs-on: windows-latest
@@ -84,9 +88,12 @@ jobs:
         shell: pwsh
         run: |
           $version=(Get-Content ui/newservice/wails.json -Raw | ConvertFrom-Json).info.productVersion
-          if ($env:GITHUB_REF -like 'refs/tags/*' -and $env:GITHUB_REF_NAME -ne ('v'+$version)) { throw 'Tag and product version must match' }
-          ./scripts/build-raw-installer.ps1 -Version $version
-          Copy-Item dist/fturn-raw-windows-ui-newservice.zip "dist/fturn-raw-$version-windows-x64-portable.zip"
+          $coreVersion=(Get-Content internal/buildinfo/core-version.txt -Raw).Trim()
+          $serverVersion=(Get-Content internal/buildinfo/server-version.txt -Raw).Trim()
+          if ($coreVersion -ne $serverVersion) { throw 'Client and server core release versions must match' }
+          if ($env:GITHUB_REF -like 'refs/tags/*' -and $env:GITHUB_REF_NAME -ne ('v'+$coreVersion)) { throw 'Tag and core release version must match' }
+          ./scripts/build-raw-installer.ps1 -Version $version -OutputFile "$pwd/dist/fturn-raw-$coreVersion-windows-x64-setup.exe"
+          Copy-Item dist/fturn-raw-windows-ui-newservice.zip "dist/fturn-raw-$coreVersion-windows-x64-portable.zip"
           $lines=Get-ChildItem dist/*-windows-x64-setup.exe,dist/*-windows-x64-portable.zip | ForEach-Object { ((Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant())+'  '+$_.Name }
           $lines | Set-Content dist/SHA256SUMS -Encoding ascii
       - name: Installer regression checks
@@ -142,12 +149,17 @@ jobs:
             dist/SERVER-SHA256SUMS-${{ matrix.target }}
           if-no-files-found: error
   release:
-    if: always() && startsWith(github.ref, 'refs/tags/') && needs.windows.result == 'success' && (needs.servers.result == 'success' || needs.servers.result == 'skipped')
-    needs: [windows, servers]
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.windows.result == 'success' && needs.platform-clients.result == 'success' && needs.servers.result == 'success'
+    needs: [windows, servers, platform-clients]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: fturn-raw-platform-clients
+          path: release
       - uses: actions/download-artifact@v4
         with:
           name: fturn-raw-windows-x64
@@ -163,14 +175,28 @@ jobs:
         run: |
           cat release/SERVER-SHA256SUMS-* | sort > release/SERVER-SHA256SUMS
           rm release/SERVER-SHA256SUMS-linux-amd64 release/SERVER-SHA256SUMS-linux-arm64 release/SERVER-SHA256SUMS-windows-amd64
+      - name: Verify complete release checksums
+        working-directory: release
+        run: |
+          cat SHA256SUMS CLIENT-SHA256SUMS SERVER-SHA256SUMS | sort > SHA256SUMS.all
+          mv SHA256SUMS.all SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release already exists; preserving published assets."
-            exit 0
+          if gh release view "$TAG" --json isDraft --jq '.isDraft' > existing-draft.txt; then
+            if [ "$(cat existing-draft.txt)" = false ]; then
+              echo "Release already published; preserving its assets."
+              exit 0
+            fi
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* --verify-tag --draft --title "FturnRaw $TAG — до трёх устройств на один ключ" --notes-file "docs/releases/$TAG.md"
           fi
-          gh release create "$TAG" release/* --verify-tag --latest --title "FturnRaw $TAG" --notes "Windows x64 client (NSIS and portable) and SHA256 manifest. Optional server packages are controlled by the release plan. Profiles are stored in LocalAppData and preserved on upgrade/uninstall. Close the client via the tray before installing. The application and installer are currently unsigned."
+          expected=$(find release -maxdepth 1 -type f | wc -l)
+          actual=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          test "$expected" -eq "$actual"
+          gh release edit "$TAG" --draft=false --latest
