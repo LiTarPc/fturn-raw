@@ -177,6 +177,10 @@ class QuickStart(unittest.TestCase):
         target=self.p/'unrelated';target.write_text('do-not-touch')
         key=self.p/'etc/fturn-raw/raw.key';key.parent.mkdir(parents=True);key.symlink_to(target)
         self.run_script(success=False);self.assertEqual(target.read_text(),'do-not-touch');self.assertEqual(self.state()['downloads'],0)
+    def test_dangling_binary_symlink_is_preserved(self):
+        folder=self.p/'opt/fturn-raw';folder.mkdir(parents=True)
+        target=self.p/'missing-unrelated-file';link=folder/'raw-server';link.symlink_to(target)
+        self.run_script(success=False);self.assertTrue(link.is_symlink());self.assertFalse(target.exists());self.assertEqual(self.state()['downloads'],0)
     def test_edited_managed_install_is_not_deleted(self):
         self.run_script();unit=self.p/'systemd/fturn-raw.service';unit.write_text(unit.read_text()+'# custom\n')
         self.run_script('--uninstall',success=False);self.assertTrue(self.state()['active']);self.assertTrue(unit.exists())

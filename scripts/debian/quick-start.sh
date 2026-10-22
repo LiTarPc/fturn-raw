@@ -113,7 +113,7 @@ check_paths() {
  done
  if [[ ! -f "$CONFIG_DIR/quick-start.json" ]]; then
   for path in "$INSTALL_DIR/raw-server" "$INSTALL_DIR/raw-firewall" "$UNIT_FILE" "$SYSCTL_FILE"; do
-   [[ ! -e "$path" ]] || die "Найдена существующая установка: $path. Quick-start её не перезаписывает; см. инструкцию обновления"
+   [[ ! -e "$path" && ! -L "$path" ]] || die "Найдена существующая установка: $path. Quick-start её не перезаписывает; см. инструкцию обновления"
   done
  fi
 }
