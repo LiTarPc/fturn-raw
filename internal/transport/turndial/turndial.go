@@ -199,6 +199,11 @@ func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAdd
 		}
 		return nil, err
 	}
+	// After allocation allow a short goodbye window on normal session shutdown.
+	// Allocate cancellation above remains immediate; a blocked write still aborts
+	// immediately through deadlineRelay. The fallback also wakes idle readers.
+	stopParent()
+	stopParent = context.AfterFunc(ctx, func() { time.AfterFunc(250*time.Millisecond, abort) })
 	var closeOnce sync.Once
 	var closeErr error
 	closeStream := func() error {

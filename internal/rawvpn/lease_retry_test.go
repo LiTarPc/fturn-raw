@@ -103,3 +103,62 @@ func TestLostWorkersLeaseExpiresWithoutEvictingLiveDevice(t *testing.T) {
 		t.Fatal("live device evicted")
 	}
 }
+
+func TestOrderlyClientCancellationReleasesSlot(t *testing.T) {
+	key := testKey(t)
+	pc := udpSocket(t)
+	serverDev := newTestDevice()
+	serverCtx, stopServer := context.WithCancel(context.Background())
+	defer stopServer()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- RunServer(serverCtx, pc, serverDev, ServerConfig{ClientAddress: netip.MustParseAddr("10.77.0.2"), MaxDevices: 1, MTU: 1280, Profile: "rtpopus2", Key: key})
+	}()
+	defer func() {
+		stopServer()
+		select {
+		case err := <-serverDone:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("server shutdown")
+		}
+	}()
+	var connected atomic.Int32
+	cfg := ClientConfig{Peer: pc.LocalAddr().(*net.UDPAddr), Address: netip.MustParseAddr("10.77.0.2"), MTU: 1280, Profile: "rtpopus2", Key: key, Streams: 1, Provider: staticProvider{addr: startTURN(t, false)}, Connected: &connected}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- RunClient(ctx, newTestDevice(), cfg) }()
+	deadline := time.Now().Add(8 * time.Second)
+	for connected.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if connected.Load() != 1 {
+		t.Fatal("client did not connect")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("client cancellation stalled")
+	}
+	cfg.group[0] = 42
+	// UDP control delivery and teardown are asynchronous, so allow a short retry,
+	// far below the 90-second lease lifetime.
+	deadline = time.Now().Add(time.Second)
+	for {
+		_, _, err := clientHandshake(context.Background(), udpSocket(t), pc.LocalAddr(), cfg)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("goodbye did not release slot: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
