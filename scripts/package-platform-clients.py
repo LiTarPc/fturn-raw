@@ -9,7 +9,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = (ROOT / 'internal/buildinfo/core-version.txt').read_text().strip()
-assert re.fullmatch(r'\d+\.\d+\.\d+', VERSION), 'Invalid client core version'
+assert re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?', VERSION), 'Invalid client core version'
 DIST = ROOT / 'dist'
 TARGETS = {
     'linux-amd64': ('raw-client', 62, 2),

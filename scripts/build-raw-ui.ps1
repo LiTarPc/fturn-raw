@@ -3,7 +3,7 @@ $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
 $productVersion=(Get-Content -LiteralPath (Join-Path $projectRoot 'ui/newservice/wails.json') -Raw | ConvertFrom-Json).info.productVersion
 $coreVersion=([IO.File]::ReadAllText((Join-Path $projectRoot 'internal/buildinfo/core-version.txt'))).Trim()
-if($coreVersion -notmatch '^\d+\.\d+\.\d+$'){throw 'Raw core version must be major.minor.patch'}
+if($coreVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$'){throw 'Raw core version must be major.minor.patch'}
 $oldArch=$env:GOARCH;$oldCGO=$env:CGO_ENABLED;$oldOS=$env:GOOS
 Push-Location $projectRoot
 try {

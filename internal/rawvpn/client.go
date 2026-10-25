@@ -20,6 +20,9 @@ import (
 )
 
 // ErrDeviceLimit means the shared server key has no free concurrent device slot.
+// Allow stale server sessions (90s TTL plus sweep) to expire after a crash.
+const deviceLimitRetryWindow = 2 * time.Minute
+
 var ErrDeviceLimit = errors.New("raw: server device limit reached; disconnect another device and retry")
 
 type ClientConfig struct {
@@ -122,6 +125,7 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 			break
 		}
 		wg.Go(func() {
+			var limitSince time.Time
 			for runCtx.Err() == nil {
 				if !pacer.Wait(runCtx) {
 					return
@@ -130,7 +134,14 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 				if runCtx.Err() != nil {
 					return
 				}
-				if errors.Is(err, provider.ErrFatalNoStreams) || errors.Is(err, ErrDeviceLimit) {
+				if errors.Is(err, ErrDeviceLimit) {
+					if limitSince.IsZero() {
+						limitSince = time.Now()
+					}
+				} else {
+					limitSince = time.Time{}
+				}
+				if errors.Is(err, provider.ErrFatalNoStreams) || (!limitSince.IsZero() && time.Since(limitSince) >= deviceLimitRetryWindow) {
 					report(err)
 					return
 				}
@@ -338,6 +349,7 @@ func writeOneFrame(pc net.PacketConn, peer net.Addr, c *codec, wireBuf, plain []
 	if err := pc.SetWriteDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		return err
 	}
+	defer pc.SetWriteDeadline(time.Time{})
 	_, err = pc.WriteTo(wireBuf[:n], peer)
 	return err
 }

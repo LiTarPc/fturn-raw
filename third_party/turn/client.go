@@ -85,6 +85,7 @@ type Client struct {
 	allocTryLock  client.TryLock         // Thread-safe
 	listenTryLock client.TryLock         // Thread-safe
 	mutex         sync.RWMutex           // Thread-safe
+	closed        bool                   // protected by mutexTrMap
 	mutexTrMap    sync.Mutex             // Thread-safe
 	log           logging.LeveledLogger  // Read-only
 
@@ -291,6 +292,9 @@ func (c *Client) WriteTo(data []byte, to net.Addr) (int, error) {
 	return c.conn.WriteTo(data, to)
 }
 
+// SetWriteDeadline applies to the underlying TURN transport, including TCP.
+func (c *Client) SetWriteDeadline(t time.Time) error { return c.conn.SetWriteDeadline(t) }
+
 // Listen will have this client start listening on the conn provided via the config.
 // This is optional. If not used, you will need to call HandleInbound method
 // to supply incoming data, instead.
@@ -328,6 +332,7 @@ func (c *Client) Close() {
 	c.mutexTrMap.Lock()
 	defer c.mutexTrMap.Unlock()
 
+	c.closed = true
 	c.trMap.CloseAndDeleteAll()
 }
 
@@ -601,11 +606,24 @@ func (c *Client) PerformTransaction(msg *stun.Message, to net.Addr, ignoreResult
 		IgnoreResult: ignoreResult,
 	})
 
+	c.mutexTrMap.Lock()
+	if c.closed {
+		c.mutexTrMap.Unlock()
+		// Closing transactions must not prevent a final best-effort deallocation.
+		if ignoreResult {
+			_, err := c.conn.WriteTo(tr.Raw, to)
+			return client.TransactionResult{}, err
+		}
+		return client.TransactionResult{}, net.ErrClosed
+	}
 	c.trMap.Insert(trKey, tr)
+	c.mutexTrMap.Unlock()
 
 	c.log.Tracef("Start %s transaction %s to %s", msg.Type, trKey, tr.To)
 	_, err := c.conn.WriteTo(tr.Raw, to)
 	if err != nil {
+		c.trMap.Delete(trKey)
+		tr.Close()
 		return client.TransactionResult{}, err
 	}
 

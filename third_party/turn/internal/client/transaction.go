@@ -41,6 +41,7 @@ type Transaction struct {
 	interval time.Duration          // Modified only by the timer thread
 	timer    *time.Timer            // Thread-safe, set only by the creator, and stopper
 	resultCh chan TransactionResult // Thread-safe
+	closed   bool
 	mutex    sync.RWMutex
 }
 
@@ -48,7 +49,7 @@ type Transaction struct {
 func NewTransaction(config *TransactionConfig) *Transaction {
 	var resultCh chan TransactionResult
 	if !config.IgnoreResult {
-		resultCh = make(chan TransactionResult)
+		resultCh = make(chan TransactionResult, 1)
 	}
 
 	return &Transaction{
@@ -65,6 +66,9 @@ func (t *Transaction) StartRtxTimer(onTimeout func(trKey string, nRtx int)) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
+	if t.closed {
+		return
+	}
 	t.timer = time.AfterFunc(t.interval, func() {
 		t.mutex.Lock()
 		t.nRtx++
@@ -90,13 +94,17 @@ func (t *Transaction) StopRtxTimer() {
 
 // WriteResult writes the result to the result channel.
 func (t *Transaction) WriteResult(res TransactionResult) bool {
-	if t.resultCh == nil {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	if t.resultCh == nil || t.closed {
 		return false
 	}
-
-	t.resultCh <- res
-
-	return true
+	select {
+	case t.resultCh <- res:
+		return true
+	default:
+		return false
+	}
 }
 
 // WaitForResult waits for the transaction result.
@@ -117,6 +125,15 @@ func (t *Transaction) WaitForResult() TransactionResult {
 
 // Close closes the transaction.
 func (t *Transaction) Close() {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	if t.closed {
+		return
+	}
+	t.closed = true
+	if t.timer != nil {
+		t.timer.Stop()
+	}
 	if t.resultCh != nil {
 		close(t.resultCh)
 	}

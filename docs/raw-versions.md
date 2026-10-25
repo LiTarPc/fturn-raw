@@ -38,3 +38,8 @@ Check the exact binaries:
 Historical 0.1.12/0.1.13 client archives and 0.1.10 server archives keep their
 original names and contents. New versioned output folders and suffixed packages
 keep both generations available locally.
+
+## Core reliability beta
+
+Client and server core: **1.0.1-beta**. Windows interface: **0.1.13**, unchanged.
+See [release notes](releases/v1.0.1-beta.md). The 1.0.0 entries above describe the previous release.

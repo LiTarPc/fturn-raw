@@ -46,6 +46,7 @@ type rawServer struct {
 	bases    []*codec
 	mu       sync.Mutex
 	sessions map[string]*serverSession
+	leases   map[[16]byte]deviceLease
 	order    []string
 	cursors  map[netip.Addr]*serverCursor
 	writeMu  sync.Mutex
@@ -240,9 +241,7 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 			s.sendSessionControl(worker, frameDeviceLimit)
 			return nil
 		}
-		if !worker.address.IsValid() {
-			worker.address = assigned
-		}
+		worker.address = assigned
 		// A reconnect may replace only the same logical worker in this group.
 		// Other devices sharing the key keep their sessions and assigned IPs.
 		for address, old := range s.sessions {
@@ -252,6 +251,7 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 			}
 		}
 		worker.active, worker.seen = true, time.Now()
+		s.rememberLease(worker)
 		s.mu.Unlock()
 		if !active {
 			s.cfg.Log.Infof("RAW authenticated worker %s for %s profile=%s", worker.addr, worker.address, worker.codec.profile)
@@ -274,6 +274,7 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 		}
 		s.mu.Lock()
 		worker.seen = time.Now()
+		s.rememberLease(worker)
 		s.mu.Unlock()
 		if err := translateIPv4(packet, s.cfg.ClientAddress, worker.address, true); err != nil {
 			return nil
@@ -287,6 +288,7 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 		}
 		s.mu.Lock()
 		worker.seen = time.Now()
+		s.rememberLease(worker)
 		s.mu.Unlock()
 		s.sendSessionControl(worker, framePong)
 		return nil
@@ -306,7 +308,8 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 	case frameClose:
 		if len(plain) == 1 {
 			s.mu.Lock()
-			s.remove(worker.addr.String())
+			s.removeCurrent(worker)
+			s.releaseClosedLease(worker.group)
 			s.mu.Unlock()
 		}
 	}
@@ -338,7 +341,7 @@ func (s *rawServer) downlink(ctx context.Context) error {
 		if err := s.send(worker.addr, worker.codec, packet[:n+1]); err != nil {
 			s.cfg.Log.Debugf("RAW downlink send: %v", err)
 			s.mu.Lock()
-			s.remove(worker.addr.String())
+			s.removeCurrent(worker)
 			s.mu.Unlock()
 		}
 	}
@@ -392,6 +395,9 @@ func (s *rawServer) pick(now time.Time, destination netip.Addr) *serverSession {
 
 // remove is called with mu held.
 func (s *rawServer) remove(key string) {
+	if worker := s.sessions[key]; worker != nil && worker.active {
+		s.rememberLease(worker)
+	}
 	delete(s.sessions, key)
 	for i, k := range s.order {
 		if k == key {
@@ -419,13 +425,14 @@ func (s *rawServer) expire(now time.Time) {
 			s.remove(key)
 		}
 	}
+	s.expireLeases(now)
 }
 
 func (s *rawServer) sendSessionControl(worker *serverSession, kind byte) {
 	if err := s.send(worker.addr, worker.codec, []byte{kind}); err != nil {
 		s.cfg.Log.Debugf("RAW control send: %v", err)
 		s.mu.Lock()
-		s.remove(worker.addr.String())
+		s.removeCurrent(worker)
 		s.mu.Unlock()
 	}
 }

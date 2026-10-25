@@ -318,7 +318,7 @@ func (c *UDPConn) isClosed() bool {
 //
 // A zero value for t means I/O operations will not time out.
 func (c *UDPConn) SetDeadline(t time.Time) error {
-	return c.SetReadDeadline(t)
+	return errors.Join(c.SetReadDeadline(t), c.SetWriteDeadline(t))
 }
 
 // SetReadDeadline sets the deadline for future ReadFrom calls
@@ -341,9 +341,8 @@ func (c *UDPConn) SetReadDeadline(t time.Time) error {
 // Even if write times out, it may return n > 0, indicating that
 // some of the data was successfully written.
 // A zero value for t means WriteTo will not time out.
-func (c *UDPConn) SetWriteDeadline(time.Time) error {
-	// Write never blocks.
-	return nil
+func (c *UDPConn) SetWriteDeadline(t time.Time) error {
+	return c.client.SetWriteDeadline(t)
 }
 
 func addr2PeerAddress(addr net.Addr) proto.PeerAddress {

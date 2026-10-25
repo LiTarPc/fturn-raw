@@ -5,7 +5,7 @@
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 if(-not $Version){$Version=([IO.File]::ReadAllText((Join-Path $root 'internal/buildinfo/server-version.txt'))).Trim()}
-if($Version -notmatch '^\d+\.\d+\.\d+$'){throw 'Version must be major.minor.patch'}
+if($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$'){throw 'Version must be major.minor.patch with an optional prerelease suffix'}
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 function Assert($condition,$message){if(-not $condition){throw $message}}
 $hostOS=if([Environment]::OSVersion.Platform -eq 'Win32NT'){'windows'}else{'linux'}
