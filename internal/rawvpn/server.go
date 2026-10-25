@@ -241,7 +241,9 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 			s.sendSessionControl(worker, frameDeviceLimit)
 			return nil
 		}
-		worker.address = assigned
+		if worker.address != assigned {
+			worker.address = assigned
+		}
 		// A reconnect may replace only the same logical worker in this group.
 		// Other devices sharing the key keep their sessions and assigned IPs.
 		for address, old := range s.sessions {

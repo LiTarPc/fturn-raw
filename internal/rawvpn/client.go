@@ -185,8 +185,12 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 					}
 					candidate = net.JoinHostPort(cfg.Host, port)
 				}
-				if addr, resolveErr := net.ResolveUDPAddr("udp", candidate); resolveErr == nil {
-					cfg.OnTURN(addr.IP)
+				host, _, splitErr := net.SplitHostPort(candidate)
+				if splitErr != nil {
+					continue
+				}
+				if ips, resolveErr := net.DefaultResolver.LookupIPAddr(ctx, host); resolveErr == nil && len(ips) > 0 {
+					cfg.OnTURN(ips[0].IP)
 				}
 			}
 		}
