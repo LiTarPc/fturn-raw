@@ -4,7 +4,7 @@
 !include "WinVer.nsh"
 !include "LogicLib.nsh"
 !ifndef VERSION
- !define VERSION "0.1.13"
+ !define VERSION "0.1.14"
 !endif
 !ifndef PAYLOAD_DIR
  !error "PAYLOAD_DIR is required"

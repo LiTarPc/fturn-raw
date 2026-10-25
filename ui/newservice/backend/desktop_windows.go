@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -19,6 +20,7 @@ type trayDriver interface {
 	Quit()
 }
 type desktopController struct {
+	windowMu    sync.Mutex
 	host        windowHost
 	tray        trayDriver
 	snapshot    func() Snapshot
@@ -39,9 +41,7 @@ func (d *desktopController) start() {
 			return
 		}
 		d.ready.Store(true)
-		if d.hideOnReady.Load() {
-			d.beforeClose()
-		}
+		d.applyPendingHide()
 	}, d.show, d.toggle, d.exit)
 	go func() {
 		ticker := time.NewTicker(250 * time.Millisecond)
@@ -77,6 +77,11 @@ func (d *desktopController) canHide() bool {
 	return d.ready.Load() && d.settings().MinimizeToTray && !d.exiting.Load()
 }
 func (d *desktopController) beforeClose() bool {
+	d.windowMu.Lock()
+	defer d.windowMu.Unlock()
+	return d.hideLocked()
+}
+func (d *desktopController) hideLocked() bool {
 	if !d.canHide() {
 		return false
 	}
@@ -85,12 +90,20 @@ func (d *desktopController) beforeClose() bool {
 	return true
 }
 func (d *desktopController) checkMinimize() {
+	d.windowMu.Lock()
+	defer d.windowMu.Unlock()
 	if d.canHide() && !d.hidden.Load() && d.host.Minimized() {
 		d.hidden.Store(true)
 		d.host.Hide()
 	}
 }
-func (d *desktopController) show() { d.hidden.Store(false); d.host.Show() }
+func (d *desktopController) show() {
+	d.windowMu.Lock()
+	defer d.windowMu.Unlock()
+	d.hideOnReady.Store(false)
+	d.hidden.Store(false)
+	d.host.Show()
+}
 func (d *desktopController) exit() {
 	if d.exiting.CompareAndSwap(false, true) {
 		d.host.Quit()
@@ -104,9 +117,18 @@ func (d *desktopController) stop() {
 }
 
 func (d *desktopController) hideWhenReady() {
+	d.windowMu.Lock()
+	defer d.windowMu.Unlock()
 	d.hideOnReady.Store(true)
 	if d.ready.Load() {
-		d.beforeClose()
+		d.hideLocked()
+	}
+}
+func (d *desktopController) applyPendingHide() {
+	d.windowMu.Lock()
+	defer d.windowMu.Unlock()
+	if d.hideOnReady.Load() {
+		d.hideLocked()
 	}
 }
 

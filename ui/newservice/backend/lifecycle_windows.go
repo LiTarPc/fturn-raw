@@ -44,7 +44,7 @@ func (a *App) DomReady(ctx context.Context) {
 	}
 	s := a.settings.get()
 	for _, arg := range os.Args[1:] {
-		if arg == "-startup" && s.MinimizeToTray && a.desktop != nil {
+		if arg == "-startup" && !a.showRequested.Load() && s.MinimizeToTray && a.desktop != nil {
 			a.desktop.hideWhenReady()
 		}
 	}
@@ -55,6 +55,18 @@ func (a *App) DomReady(ctx context.Context) {
 			a.publish()
 		}
 	}
+	a.domReady.Store(true)
+	if a.showRequested.Load() && a.desktop != nil {
+		a.desktop.show()
+	}
+}
+
+// RequestShow is safe while the first instance is still starting up.
+func (a *App) RequestShow() {
+	a.showRequested.Store(true)
+	if a.domReady.Load() && a.desktop != nil {
+		a.desktop.show()
+	}
 }
 func (a *App) OnBeforeClose(ctx context.Context) bool {
 	if a.desktop != nil && a.desktop.beforeClose() {
@@ -64,6 +76,7 @@ func (a *App) OnBeforeClose(ctx context.Context) bool {
 	return false
 }
 func (a *App) Shutdown(ctx context.Context) {
+	a.domReady.Store(false)
 	if a.desktop != nil {
 		a.desktop.stop()
 	}

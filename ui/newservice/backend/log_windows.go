@@ -1,8 +1,6 @@
 package backend
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -29,11 +27,15 @@ func (a *App) appendLog(line string) {
 	if a.dataDir == "" {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(a.dataDir, "ui.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if err == nil {
-		_, _ = fmt.Fprintln(f, time.Now().Format(time.RFC3339)+" "+line)
-		_ = f.Close()
+	a.logMu.Lock()
+	defer a.logMu.Unlock()
+	err := appendRotatingLog(filepath.Join(a.dataDir, "ui.log"), time.Now().Format(time.RFC3339)+" "+line+"\n", uiLogMaxBytes, uiLogBackups)
+	a.mu.Lock()
+	a.logError = ""
+	if err != nil {
+		a.logError = err.Error()
 	}
+	a.mu.Unlock()
 }
 
 // UI failures have explicit severity just like core logs; never infer it from text.

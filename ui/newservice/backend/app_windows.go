@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,6 +26,8 @@ type Profile struct {
 	RouteMode      string
 }
 type Snapshot struct {
+	Revision       uint64         `json:"revision"`
+	LogError       string         `json:"logError"`
 	AuthRetryAt    int64          `json:"authRetryAt"`
 	BypassActive   bool           `json:"bypassActive"`
 	Bypass         BypassSnapshot `json:"bypass"`
@@ -44,6 +47,12 @@ type Snapshot struct {
 	DataDir        string         `json:"dataDir"`
 }
 type App struct {
+	showRequested           atomic.Bool
+	domReady                atomic.Bool
+	snapshotMu              sync.Mutex
+	logMu                   sync.Mutex
+	revision                uint64
+	logError                string
 	mu                      sync.Mutex
 	op                      sync.Mutex
 	root                    string
@@ -127,11 +136,11 @@ func newAppAt(root, dataDir string, initErr error) *App {
 	return a
 }
 func (a *App) GetSnapshot() Snapshot {
+	a.snapshotMu.Lock()
+	defer a.snapshotMu.Unlock()
 	a.mu.Lock()
-	snap := Snapshot{Profile: a.profile, Profiles: append([]SavedProfile{}, a.profiles...), ActiveID: a.activeID, State: a.state, Detail: a.detail, Underlay: a.underlay, Ready: len(a.ready), Logs: append([]string{}, a.logs...), RX: a.rx, TX: a.tx, ElapsedSeconds: a.clock.seconds(time.Now()), DataDir: a.dataDir}
-	a.mu.Unlock()
-	a.mu.Lock()
-	snap.BypassActive = a.bypassActive
+	a.revision++
+	snap := Snapshot{Revision: a.revision, LogError: a.logError, BypassActive: a.bypassActive, Profile: a.profile, Profiles: append([]SavedProfile{}, a.profiles...), ActiveID: a.activeID, State: a.state, Detail: a.detail, Underlay: a.underlay, Ready: len(a.ready), Logs: append([]string{}, a.logs...), RX: a.rx, TX: a.tx, ElapsedSeconds: a.clock.seconds(time.Now()), DataDir: a.dataDir}
 	a.mu.Unlock()
 	snap.AuthRetryAt = authRetryAt(a.dataDir, time.Now())
 	snap.Settings = a.settings.get()

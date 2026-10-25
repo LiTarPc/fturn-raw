@@ -1,0 +1,104 @@
+name: Windows UI packages
+on:
+  push:
+    branches: [codex/ui-0.1.14-beta]
+    tags: ['ui-v*.*.*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ui-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache-dependency-path: |
+            go.sum
+            ui/newservice/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/newservice/frontend/package-lock.json
+      - name: Install build tools
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
+          choco install nsis --yes --no-progress
+          Add-Content $env:GITHUB_PATH "${env:ProgramFiles(x86)}\NSIS"
+          Add-Content $env:GITHUB_PATH "$(go env GOPATH)\bin"
+      - name: Protocol tests
+        shell: pwsh
+        run: |
+          go test ./internal/bypass ./internal/rawvpn ./cmd/raw-server ./internal/session ./internal/config ./internal/provider/vk/...
+          if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
+          Push-Location shared/bypass
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Bypass rule tests failed' }
+          Pop-Location
+      - name: Native DNS firewall filter checks
+        shell: pwsh
+        run: ./scripts/test-raw-dns-firewall-native.ps1
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version=(Get-Content ui/newservice/wails.json -Raw | ConvertFrom-Json).info.productVersion
+          $coreVersion=(Get-Content internal/buildinfo/core-version.txt -Raw).Trim()
+          if ($coreVersion -ne '1.0.1-beta') { throw 'UI beta must bundle the verified 1.0.1-beta core' }
+          if ($env:GITHUB_REF -like 'refs/tags/*' -and $env:GITHUB_REF_NAME -ne ('ui-v'+$version+'-beta')) { throw 'UI tag and product version must match' }
+          ./scripts/build-raw-installer.ps1 -Version $version -OutputFile "$pwd/dist/fturn-raw-ui-$version-beta-windows-x64-setup.exe"
+          Copy-Item dist/fturn-raw-windows-ui-newservice.zip "dist/fturn-raw-ui-$version-beta-windows-x64-portable.zip"
+          $lines=Get-ChildItem dist/*-windows-x64-setup.exe,dist/*-windows-x64-portable.zip | ForEach-Object { ((Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant())+'  '+$_.Name }
+          $lines | Set-Content dist/SHA256SUMS -Encoding ascii
+      - name: Installer regression checks
+        shell: pwsh
+        run: |
+          ./scripts/test-raw-installer-support.ps1
+          ./scripts/test-raw-installer.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fturn-raw-windows-x64
+          path: |
+            dist/*-windows-x64-setup.exe
+            dist/*-windows-x64-portable.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/ui-v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: fturn-raw-windows-x64
+          path: release
+      - name: Verify package checksums
+        working-directory: release
+        run: sha256sum --check --strict SHA256SUMS
+      - name: Publish Windows UI prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --json isDraft --jq '.isDraft' > existing-draft.txt; then
+            if [ "$(cat existing-draft.txt)" = false ]; then
+              echo "Release already published; preserving its assets."
+              exit 0
+            fi
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* --verify-tag --draft --prerelease --title "FturnRaw Windows UI 0.1.14 beta (core 1.0.1-beta)" --notes-file "docs/releases/$TAG.md"
+          fi
+          expected=$(find release -maxdepth 1 -type f | wc -l)
+          actual=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          test "$expected" -eq "$actual"
+          gh release edit "$TAG" --draft=false --prerelease --latest=false

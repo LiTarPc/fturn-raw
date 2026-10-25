@@ -21,8 +21,19 @@ try {
  if($LASTEXITCODE -ne 0){throw 'Crash guard integration checks failed'}
  Push-Location (Join-Path $projectRoot 'ui/newservice')
  try {
-  go test ./backend
-  if($LASTEXITCODE -ne 0){throw 'UI backend tests failed'}
+  Push-Location frontend
+  try {
+   npm ci
+   if($LASTEXITCODE -ne 0){throw 'UI dependencies failed'}
+   npm run lint
+   if($LASTEXITCODE -ne 0){throw 'UI lint failed'}
+   npm test
+   if($LASTEXITCODE -ne 0){throw 'UI frontend tests failed'}
+   npm run build
+   if($LASTEXITCODE -ne 0){throw 'UI frontend build failed'}
+  }finally{Pop-Location}
+  go test . ./backend
+  if($LASTEXITCODE -ne 0){throw 'UI process/backend tests failed'}
   wails build -platform windows/amd64 -clean -ldflags ("-X fturnrawui/backend.Version="+$productVersion)
   if($LASTEXITCODE -ne 0){throw 'Wails UI build failed'}
  }finally{Pop-Location}

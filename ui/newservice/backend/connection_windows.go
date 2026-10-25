@@ -267,17 +267,18 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 			}
 			a.setState(g, "connected", "Подключён")
 		} else if match := retryRE.FindStringSubmatch(line); match != nil {
-			a.mu.Lock()
-			delete(a.ready, match[1])
-			count := len(a.ready)
-			a.mu.Unlock()
+			count, valid := a.retryStream(g, match[1])
+			if !valid {
+				break
+			}
 			if applied && count == 0 {
 				a.setState(g, "reconnecting", "Связь потеряна, повторяем подключение. Можно отключить Raw.")
 			}
 		}
 	}
-	waitErr := c.Wait()
-	if ctx.Err() == nil && waitErr != nil {
+	scanErr := scanner.Err()
+	waitErr := waitCoreOutput(c, scanErr)
+	if ctx.Err() == nil && waitErr != nil && scanErr == nil {
 		if until := authRetryAt(a.dataDir, time.Now()); until > 0 {
 			waitErr = errors.New(authPauseMessage(until))
 		}
@@ -291,13 +292,10 @@ func (a *App) run(ctx context.Context, g int, p Profile, key, bypassPath string)
 	if timeout {
 		runErr = errors.New("Таймаут: " + strings.ToUpper(profileDefaults(p).Transport) + " к TURN недоступен через выбранное соединение.")
 	}
-	if runErr != nil && ctx.Err() == nil {
+	if runErr != nil && ctx.Err() == nil && scanErr == nil {
 		if until := authRetryAt(a.dataDir, time.Now()); until > 0 {
 			runErr = errors.New(authPauseMessage(until))
 		}
-	}
-	if scanErr := scanner.Err(); runErr == nil && scanErr != nil && ctx.Err() == nil {
-		runErr = scanErr
 	}
 }
 func (a *App) stats(ctx context.Context, g int) {

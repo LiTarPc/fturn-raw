@@ -16,7 +16,8 @@ export function LogsScreen({snapshot:s}:{snapshot?:Snapshot}){
  const chooseFilter=(next:LogFilter)=>{followTail.current=true;setFilter(next)};
  return <section className="screen logs-screen">
   <h1>Журнал</h1>
-  <p className="hint logs-context">{s?.underlay||'Соединение ещё не выбрано'} · TCP</p>
+  <p className="hint logs-context">{s?.underlay||'Соединение ещё не выбрано'} · {(s?.profile.Transport||'tcp').toUpperCase()}{s&&['connecting','connected','reconnecting','stopping'].includes(s.state)?'':' (профиль)'}</p>
+  {s?.logError&&<p className="notice error" role="alert">Не удалось записать журнал: {s.logError}</p>}
   <div className="log-filters" role="group" aria-label="Фильтр журнала">
    {filters.map(item=><button key={item.id} type="button" className={`log-filter${filter===item.id?' active':''}`} aria-pressed={filter===item.id}
     onClick={()=>chooseFilter(item.id)}>{item.label}<span className="log-filter-count">{entries.filter(entry=>matchesLogFilter(entry,item.id)).length}</span></button>)}
