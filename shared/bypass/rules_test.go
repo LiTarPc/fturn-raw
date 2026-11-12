@@ -36,7 +36,7 @@ func TestCIDRData(t *testing.T) {
 	if e != nil || len(v) != 2 {
 		t.Fatalf("dedup failed %v %v", v, e)
 	}
-	for _, v := range []string{"", "0.0.0.0/0", "::/64", "<html>bad gateway</html>", "203.0.113.0/33", strings.Repeat(" ", MaxData+1)} {
+	for _, v := range []string{"", "::/64", "<html>bad gateway</html>", "203.0.113.0/33", strings.Repeat(" ", MaxData+1)} {
 		if _, e := ParseCIDRs(strings.NewReader(v)); e == nil {
 			t.Fatal("accepted invalid list")
 		}
@@ -46,5 +46,17 @@ func TestCIDRData(t *testing.T) {
 func TestOversizedConfig(t *testing.T) {
 	if _, e := Decode(strings.NewReader(`{"version":1}` + strings.Repeat(" ", MaxData))); e == nil {
 		t.Fatal("oversized JSON accepted")
+	}
+}
+
+// Explicit CIDR bypass lists allow a default route (Android native bypass).
+// User-entered site rules retain their stricter validation contract.
+func TestCIDRDefaultRouteIsExplicit(t *testing.T) {
+	cidrs, err := ParseCIDRs(strings.NewReader("0.0.0.0/0\n"))
+	if err != nil || len(cidrs) != 1 || cidrs[0] != "0.0.0.0/0" {
+		t.Fatalf("explicit default CIDR rejected: %v %v", cidrs, err)
+	}
+	if _, err := Site("0.0.0.0/0"); err == nil {
+		t.Fatal("default route accepted as a site rule")
 	}
 }

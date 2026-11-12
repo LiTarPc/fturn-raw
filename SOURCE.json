@@ -2,7 +2,7 @@
   "coreVersion": "1.1.0",
   "serverVersion": "1.1.0",
   "goToolchain": "go1.26.10",
-  "sourceSnapshotSha256": "576e90cb07711eb215b08c80eb77fee9c37e77ebaed3f9f1bbaef2803282fb9d",
+  "sourceSnapshotSha256": "82e87626185f277ca552c2f8e52a35b01072e48af36cab974d08a34c6a57f1ae",
   "snapshotAlgorithm": "sha256(UTF-8 canonical JSON of files; sort_keys=True, separators=(comma,colon))",
   "origin": {
     "originRepository": "https://github.com/LiTarPc/Fturn-Android",
@@ -15,7 +15,10 @@
       "internal/buildinfo/core-version.txt",
       "internal/buildinfo/server-version.txt"
     ],
-    "removedSupersededFilesCount": 2
+    "removedSupersededFilesCount": 2,
+    "testContractUpdates": [
+      "shared/bypass/rules_test.go"
+    ]
   },
   "files": [
     {
@@ -1132,7 +1135,7 @@
     },
     {
       "path": "shared/bypass/rules_test.go",
-      "sha256": "d6c0ba3a55fc044f04b688e4af03ac7107f07e53bc4a77debeaf97d2a2f8b7b2"
+      "sha256": "c9e16aa3b4b413289eb01f27baa33366093b91ac8ba5a6643f5b335c184f6c36"
     },
     {
       "path": "third_party/smux/LICENSE",

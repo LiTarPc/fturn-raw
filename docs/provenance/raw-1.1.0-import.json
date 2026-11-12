@@ -12,5 +12,8 @@
   "removedSupersededFiles": [
     "cmd/client/main.go",
     "cmd/server/main.go"
+  ],
+  "testContractUpdates": [
+    "shared/bypass/rules_test.go"
   ]
 }
