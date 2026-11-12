@@ -68,6 +68,8 @@ type policy struct {
 	apps       []string
 	mu         sync.Mutex
 	learned    map[netip.Addr]time.Time
+	names      map[netip.Addr]map[string]time.Time
+	rules      []destinationRule
 	dnsMu      sync.Mutex
 	dnsStreams map[flow]*dnsStream
 }
@@ -96,7 +98,7 @@ func (p *policy) add(n netip.Prefix) {
 }
 func (p *policy) site(ip netip.Addr) bool {
 	v := ipnum(ip)
-	for n := 1; n <= 32; n++ {
+	for n := 0; n <= 32; n++ {
 		if p.nets[n][v&mask(n)] {
 			return true
 		}

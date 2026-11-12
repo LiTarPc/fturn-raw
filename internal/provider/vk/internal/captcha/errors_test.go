@@ -2,6 +2,19 @@ package captcha
 
 import "testing"
 
+func TestParseErrorIgnoresNonCaptchaErrors(t *testing.T) {
+	for _, code := range []float64{5, 6, 10, 29} {
+		got := ParseError(map[string]any{
+			"error_code":   code,
+			"error_msg":    "API error",
+			"redirect_uri": "https://id.vk.ru/captcha?session_token=test",
+		})
+		if got != nil {
+			t.Errorf("code %v parsed as a captcha: %+v", code, got)
+		}
+	}
+}
+
 func TestParseErrorSmartCaptchaWithoutSid(t *testing.T) {
 	errData := map[string]any{
 		"error_code":   float64(14),

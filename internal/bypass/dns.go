@@ -116,7 +116,7 @@ func (p *policy) observe(b []byte) {
 }
 func (p *policy) observeMessage(data []byte) {
 	var m dns.Msg
-	if m.Unpack(data) != nil || !m.Response || m.Rcode != dns.RcodeSuccess || len(m.Question) != 1 || m.Question[0].Qtype != dns.TypeA || !p.domain(m.Question[0].Name) {
+	if m.Unpack(data) != nil || !m.Response || m.Rcode != dns.RcodeSuccess || len(m.Question) != 1 || m.Question[0].Qtype != dns.TypeA || (!p.domain(m.Question[0].Name) && len(p.rules) == 0) {
 		return
 	}
 	names := map[string]uint32{strings.ToLower(m.Question[0].Name): 3600}
@@ -142,7 +142,10 @@ func (p *policy) observeMessage(data []byte) {
 			if ttl, yes := names[strings.ToLower(a.Hdr.Name)]; yes {
 				ip, ok := netip.AddrFromSlice(a.A.To4())
 				if ok {
-					p.learn(ip, min(ttl, a.Hdr.Ttl))
+					if p.domain(m.Question[0].Name) {
+						p.learn(ip, min(ttl, a.Hdr.Ttl))
+					}
+					p.learnName(ip, m.Question[0].Name, min(ttl, a.Hdr.Ttl))
 				}
 			}
 		}

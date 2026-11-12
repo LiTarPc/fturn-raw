@@ -36,6 +36,7 @@ const (
 func defaultRaw() raw {
 	return raw{
 		Listen:         DefaultListen,
+		AutoCaptcha:    true,
 		Provider:       DefaultProvider,
 		N:              DefaultStreams,
 		StreamsPerCred: DefaultStreamsPerCred,

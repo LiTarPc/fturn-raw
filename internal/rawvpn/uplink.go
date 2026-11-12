@@ -10,10 +10,12 @@ import (
 )
 
 const (
-	UplinkPacket       = "packet"
-	UplinkTCPFlow      = "tcp-flow"
-	uplinkCapacity     = 256
-	uplinkPathCapacity = 64
+	UplinkPacket   = "packet"
+	UplinkTCPFlow  = "tcp-flow"
+	uplinkCapacity = 256
+	// Every path can use the shared budget; packet payloads still share the
+	// single atomic 256-packet reservation. A busy flow must not drop at 64.
+	uplinkPathCapacity = uplinkCapacity
 	uplinkFlowLimit    = 8192
 	uplinkFlowTTL      = 2 * time.Minute
 )

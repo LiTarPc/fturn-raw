@@ -29,20 +29,28 @@ import (
 
 const User = "fturn-raw"
 
+const maxBridgeConnections = 1024
+
 type Device struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	once     sync.Once
-	link     *channel.Endpoint
-	stack    *stack.Stack
-	listener net.Listener
-	password string
-	slots    chan struct{}
-	mu       sync.Mutex
-	sockets  map[net.Conn]struct{}
+	ctx             context.Context
+	cancel          context.CancelFunc
+	once            sync.Once
+	link            *channel.Endpoint
+	stack           *stack.Stack
+	listener        net.Listener
+	password        string
+	slots           chan struct{}
+	counters        bridgeCounters
+	associationIdle time.Duration
+	mu              sync.Mutex
+	sockets         map[net.Conn]struct{}
 }
 
 func Open(address netip.Addr, mtu, port int, password string) (*Device, error) {
+	return openWithAssociationIdle(address, mtu, port, password, 2*time.Minute)
+}
+
+func openWithAssociationIdle(address netip.Addr, mtu, port int, password string, associationIdle time.Duration) (*Device, error) {
 	if !address.Is4() || mtu < 576 || mtu > 1500 || port < 1 || port > 65535 || len(password) < 16 || len(password) > 255 {
 		return nil, errors.New("invalid RAW SOCKS bridge configuration")
 	}
@@ -51,7 +59,7 @@ func Open(address netip.Addr, mtu, port int, password string) (*Device, error) {
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	d := &Device{ctx: ctx, cancel: cancel, listener: l, password: password, slots: make(chan struct{}, 256), sockets: map[net.Conn]struct{}{}}
+	d := &Device{ctx: ctx, cancel: cancel, listener: l, password: password, associationIdle: associationIdle, slots: make(chan struct{}, maxBridgeConnections), sockets: map[net.Conn]struct{}{}}
 	d.link = channel.New(1024, uint32(mtu), "")
 	d.stack = stack.New(stack.Options{NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol}, TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol}})
 	if e := d.stack.CreateNIC(1, d.link); e != nil {
@@ -66,6 +74,7 @@ func Open(address netip.Addr, mtu, port int, password string) (*Device, error) {
 	sack := tcpip.TCPSACKEnabled(true)
 	d.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &sack)
 	go d.accept()
+	go d.reportStats()
 	return d, nil
 }
 func (d *Device) Name() string { return "raw-socks-netstack" }
@@ -134,8 +143,16 @@ func (d *Device) accept() {
 				<-d.slots
 				return
 			}
-			go func() { defer func() { d.forget(c); <-d.slots }(); d.handle(c) }()
+			d.beginHandler(c)
+			go func() {
+				reason := d.handle(c)
+				d.forget(c)
+				// Keep diagnostics and admission ownership ordered on release.
+				d.endHandler(c, reason)
+				<-d.slots
+			}()
 		default:
+			d.rejectedHandler()
 			c.Close()
 		}
 	}
@@ -196,11 +213,20 @@ func (d *Device) authenticate(c net.Conn) error {
 	_, e = c.Write([]byte{1, 0})
 	return e
 }
+
+var errSOCKSAddressType = errors.New("unsupported SOCKS address type")
+
 func readTarget(r io.Reader, atyp byte) (string, uint16, error) {
 	var host string
 	switch atyp {
 	case 1:
 		b, e := readN(r, 4)
+		if e != nil {
+			return "", 0, e
+		}
+		host = net.IP(b).String()
+	case 4:
+		b, e := readN(r, 16)
 		if e != nil {
 			return "", 0, e
 		}
@@ -219,7 +245,7 @@ func readTarget(r io.Reader, atyp byte) (string, uint16, error) {
 		}
 		host = string(b)
 	default:
-		return "", 0, errors.New("RAW SOCKS supports IPv4 only")
+		return "", 0, errSOCKSAddressType
 	}
 	b, e := readN(r, 2)
 	if e != nil {
@@ -231,70 +257,83 @@ func reply(c net.Conn, code byte, port int) error {
 	_, e := c.Write([]byte{5, code, 0, 1, 127, 0, 0, 1, byte(port >> 8), byte(port)})
 	return e
 }
-func (d *Device) handle(c net.Conn) {
+func (d *Device) handle(c net.Conn) string {
 	c.SetDeadline(time.Now().Add(15 * time.Second))
 	if d.authenticate(c) != nil {
-		return
+		return "handshake_error"
 	}
 	h, e := readN(c, 4)
 	if e != nil {
-		return
+		return "handshake_error"
 	}
 	if h[0] != 5 || h[2] != 0 {
 		reply(c, 1, 0)
-		return
+		return "handshake_error"
 	}
 	host, port, e := readTarget(c, h[3])
 	if e != nil {
+		reason := "request_address_invalid"
+		if errors.Is(e, errSOCKSAddressType) {
+			reason = "request_address_unsupported"
+		}
+		if errors.Is(e, io.EOF) || errors.Is(e, io.ErrUnexpectedEOF) {
+			reason = "request_truncated"
+		}
+		d.logRequestRejection(h[1], h[3], reason)
 		reply(c, 8, 0)
-		return
+		return reason
+	}
+	// UDP ASSOCIATE names the client's source endpoint, not the UDP target.
+	// An unspecified IPv6 hint (::, port 0) is valid even with an IPv4 relay.
+	// This does not add IPv6 routing or accept concrete IPv6 destinations.
+	if ip, err := netip.ParseAddr(host); err == nil && ip.Is6() {
+		if h[1] != 3 || !ip.IsUnspecified() || port != 0 {
+			d.logRequestRejection(h[1], h[3], "request_ipv6_unsupported")
+			reply(c, 8, 0)
+			return "request_ipv6_unsupported"
+		}
 	}
 	if h[1] == 3 {
-		d.associate(c)
-		return
+		return d.associate(c)
 	}
 	if h[1] != 1 {
 		reply(c, 7, 0)
-		return
+		return "handshake_error"
 	}
+	d.handlerKind(c, "tcp", nil)
 	ctx, cancel := context.WithTimeout(d.ctx, 15*time.Second)
 	defer cancel()
+	// The request is complete. Leave a bounded window to write a SOCKS failure
+	// after the outbound dial expires; the handshake deadline may expire first.
+	deadline, _ := ctx.Deadline()
+	if c.SetDeadline(deadline.Add(5*time.Second)) != nil {
+		return "handshake_error"
+	}
 	ip, e := d.resolve(ctx, host)
 	if e != nil || port == 0 {
 		reply(c, 4, 0)
-		return
+		return "tcp_resolve_error"
 	}
 	target, e := gonet.DialContextTCP(ctx, d.stack, tcpip.FullAddress{NIC: 1, Addr: tcpip.AddrFrom4(ip.As4()), Port: port}, ipv4.ProtocolNumber)
 	if e != nil {
-		reply(c, 5, 0)
-		return
+		code := byte(5) // connection refused
+		var timeout net.Error
+		if errors.Is(e, context.DeadlineExceeded) || (errors.As(e, &timeout) && timeout.Timeout()) {
+			code = 4 // host unreachable
+		}
+		reply(c, code, 0)
+		return "tcp_dial_error"
 	}
 	if !d.track(target) {
-		return
+		return "handshake_error"
 	}
 	defer d.forget(target)
 	if reply(c, 0, 0) != nil {
-		return
+		return "handshake_error"
 	}
 	c.SetDeadline(time.Time{})
-	done := make(chan struct{})
-	go func() {
-		_, err := io.Copy(target, c)
-		target.CloseWrite()
-		if err != nil {
-			c.Close()
-			target.Close()
-		}
-		close(done)
-	}()
-	_, err := io.Copy(c, target)
-	c.(*net.TCPConn).CloseWrite()
-	if err != nil {
-		c.Close()
-		target.Close()
-	}
-	// EOF closes only this direction. The peer may still be receiving upload.
-	<-done
+	relayTCP(d.ctx, c, target, 10*time.Minute, time.Minute)
+	return "tcp_closed"
 }
 func (d *Device) resolve(ctx context.Context, host string) (netip.Addr, error) {
 	if ip, e := netip.ParseAddr(host); e == nil {
@@ -329,9 +368,24 @@ func (d *Device) resolve(ctx context.Context, host string) (netip.Addr, error) {
 	}
 	return netip.Addr{}, errors.New("no IPv4 DNS answer")
 }
-func (d *Device) associate(c net.Conn) { d.associateWithTimeout(c, 2*time.Minute) }
+func (d *Device) associate(c net.Conn) string {
+	return d.associateWithTimeouts(c, 2*time.Minute, d.associationIdle)
+}
 
-func (d *Device) associateWithTimeout(c net.Conn, idle time.Duration) {
+func (d *Device) associateWithTimeout(c net.Conn, idle time.Duration) string {
+	return d.associateWithTimeouts(c, idle, 2*time.Minute)
+}
+
+func (d *Device) associateWithTimeouts(c net.Conn, idle, associationIdle time.Duration) (reason string) {
+	if associationIdle <= 0 {
+		associationIdle = 2 * time.Minute
+	}
+	activity := &associationActivity{last: time.Now()}
+	d.handlerKind(c, "udp", activity)
+	defer func() {
+		activity.end("udp_relay_error")
+		_, reason = activity.snapshot()
+	}()
 	relay, e := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if e != nil {
 		reply(c, 1, 0)
@@ -344,9 +398,28 @@ func (d *Device) associateWithTimeout(c net.Conn, idle time.Duration) {
 	c.SetDeadline(time.Time{})
 	ctx, cancel := context.WithCancel(d.ctx)
 	defer cancel()
-	go func() { io.Copy(io.Discard, c); cancel(); relay.Close() }()
-	stop := context.AfterFunc(ctx, func() { relay.Close(); c.Close() })
+	controlDone := make(chan struct{})
+	go func() {
+		defer close(controlDone)
+		io.Copy(io.Discard, c)
+		activity.end("udp_control_closed")
+		cancel()
+		relay.Close()
+	}()
+	stop := context.AfterFunc(ctx, func() {
+		if d.ctx.Err() != nil {
+			activity.end("device_closed")
+		}
+		relay.Close()
+		c.Close()
+	})
 	defer stop()
+	watchdogDone := make(chan struct{})
+	go func() {
+		defer close(watchdogDone)
+		activity.watch(ctx, associationIdle, func() { cancel(); relay.Close(); c.Close() })
+	}()
+	defer func() { cancel(); <-watchdogDone }()
 	type flow struct {
 		conn   *gonet.UDPConn
 		header []byte
@@ -364,12 +437,18 @@ func (d *Device) associateWithTimeout(c net.Conn, idle time.Duration) {
 		}
 		flowMu.Unlock()
 		readers.Wait()
+		<-controlDone
 	}()
 	var peer *net.UDPAddr
 	b := make([]byte, 65535)
 	for {
 		n, from, e := relay.ReadFromUDP(b)
 		if e != nil {
+			if d.ctx.Err() != nil {
+				activity.end("device_closed")
+			} else {
+				activity.end("udp_relay_error")
+			}
 			return
 		}
 		if !from.IP.IsLoopback() || peer != nil && from.String() != peer.String() {
@@ -383,6 +462,7 @@ func (d *Device) associateWithTimeout(c net.Conn, idle time.Duration) {
 		if e != nil || port == 0 {
 			continue
 		}
+		activity.touch()
 		if peer == nil {
 			peer = from
 		}
@@ -431,6 +511,7 @@ func (d *Device) associateWithTimeout(c net.Conn, idle time.Duration) {
 					if e != nil {
 						return
 					}
+					activity.touch()
 					if _, e = relay.WriteToUDP(append(append([]byte{}, f.header...), out[:n]...), &peer); e != nil {
 						return
 					}

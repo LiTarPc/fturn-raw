@@ -100,14 +100,13 @@ func TestUplinkBoundedQueuesDoNotSprayBusyFlows(t *testing.T) {
 	a := q.register(1)
 	b := q.register(2)
 	runUplinkTest(t, q)
-	// Wait until all central entries were dispatched using a UDP barrier after
-	// capacity becomes available from drops at the pinned queue.
+	// Wait until every admitted packet was dispatched to the pinned path.
 	deadline := time.Now().Add(time.Second)
-	for q.pathDrops.Load() != uplinkCapacity-uplinkPathCapacity && time.Now().Before(deadline) {
+	for len(a.packets) != uplinkCapacity && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if q.queued.Load() != uplinkPathCapacity || len(b.packets) != 0 {
-		t.Fatal("busy flow migrated or queue budget incorrect")
+	if len(a.packets) != uplinkCapacity || q.queued.Load() != uplinkCapacity || q.pathDrops.Load() != 0 || len(b.packets) != 0 {
+		t.Fatal("busy flow migrated, lost packets below aggregate budget, or leaked capacity")
 	}
 	q.unregister(a)
 	q.unregister(a)

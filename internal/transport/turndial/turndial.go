@@ -31,8 +31,9 @@ type Stream struct {
 	Relay         net.PacketConn
 	ServerUDPAddr *net.UDPAddr
 	// PermDead закрывается при стойком провале ChannelBind refresh (relay блэкхолит трафик).
-	PermDead <-chan struct{}
-	close    func() error
+	PermDead    <-chan struct{}
+	Maintenance *MaintenanceState
+	close       func() error
 }
 
 // Close освобождает аллокацию, TURN-клиент и транспортное соединение.
@@ -118,11 +119,13 @@ func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAdd
 
 	// VK отбрасывает CreatePermission refresh с кодом 400; канал поддерживается через ChannelBind.
 	permDead := make(chan struct{})
+	maintenanceState := &MaintenanceState{}
 	var permOnce sync.Once
 	loggerFactory := &permWatchFactory{
 		inner:             &logxFactory{log: cfg.Log, stream: cfg.StreamID, maintenance: cfg.RawMaintenance},
 		threshold:         permFailThreshold,
 		allocationFailure: cfg.RawMaintenance,
+		state:             maintenanceState,
 		onDead:            func() { permOnce.Do(func() { close(permDead) }) },
 	}
 	clientConfig := &turn.ClientConfig{
@@ -219,5 +222,5 @@ func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAdd
 	}
 	guarded := &deadlineRelay{PacketConn: relay, abort: abort}
 	failed = false
-	return &Stream{Relay: guarded, ServerUDPAddr: turnServerUDPAddr, PermDead: permDead, close: closeStream}, nil
+	return &Stream{Relay: guarded, ServerUDPAddr: turnServerUDPAddr, PermDead: permDead, Maintenance: maintenanceState, close: closeStream}, nil
 }

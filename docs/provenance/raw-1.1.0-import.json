@@ -1,0 +1,16 @@
+{
+  "originRepository": "https://github.com/LiTarPc/Fturn-Android",
+  "originRelease": "v4.3.8",
+  "originCommit": "5b82036e5924002fd7f1b2b8dc197c60509cc3ad",
+  "originCoreVersion": "1.0.1-beta.android.7",
+  "originSnapshotSha256": "5a62f97521be0cc579c17a05a4fcb3e2cd2ee9c6e8c9c763f788b6fb37ae112e",
+  "importedFiles": 403,
+  "versionOnlyChanges": [
+    "internal/buildinfo/core-version.txt",
+    "internal/buildinfo/server-version.txt"
+  ],
+  "removedSupersededFiles": [
+    "cmd/client/main.go",
+    "cmd/server/main.go"
+  ]
+}

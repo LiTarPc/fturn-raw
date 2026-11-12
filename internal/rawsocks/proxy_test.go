@@ -191,3 +191,39 @@ func TestCloseUnblocksPacketReadAndStopsListener(t *testing.T) {
 		t.Fatal("listener survived Close")
 	}
 }
+
+// An unreachable destination must produce a SOCKS failure, not an unexplained EOF.
+// The handshake and outbound dial used to share a 15-second socket deadline:
+// the deadline expired before the timed-out dial could send its failure reply.
+func TestConnectTimeoutReturnsSOCKSFailure(t *testing.T) {
+	d, _ := bridge(t)
+	c := auth(t, d)
+	c.SetDeadline(time.Now().Add(20 * time.Second))
+	// The in-memory peer has no route/address for this documentation-only IP.
+	if _, err := c.Write([]byte{5, 1, 0, 1, 192, 0, 2, 123, 1, 187}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := readN(c, 10)
+	if err != nil {
+		t.Fatalf("timed-out CONNECT closed without a SOCKS failure reply: %v", err)
+	}
+	if response[0] != 5 || response[1] != 4 {
+		t.Fatalf("timed-out CONNECT reply = %v, want SOCKS host unreachable", response)
+	}
+	if _, err := c.Read(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("failed CONNECT was not closed after the reply: %v", err)
+	}
+}
+
+func TestRefusedConnectReturnsSOCKSFailure(t *testing.T) {
+	d, _ := bridge(t)
+	c := auth(t, d)
+	// The in-memory peer owns this IP but has no listener on port 9090.
+	if _, err := c.Write([]byte{5, 1, 0, 1, 203, 0, 113, 9, 35, 130}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := readN(c, 10)
+	if err != nil || response[0] != 5 || response[1] != 5 {
+		t.Fatalf("refused CONNECT reply = %v, %v; want SOCKS connection refused", response, err)
+	}
+}

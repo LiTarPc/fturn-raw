@@ -26,19 +26,46 @@ func (c *Client) fetchCallToken(
 	data := fmt.Sprintf("vk_join_link=https://vk.ru/call/join/%s&name=%s&access_token=%s",
 		link, escapedName, token1)
 
+	initialData := data
+	captchaSubmitted := false
+	manualChallengeRefreshed := false
 	for {
 		resp, err := c.doRequest(ctx, httpClient, profile, data, urlAddr)
 		if err != nil {
+			if captchaSubmitted {
+				outcome := "request_failed"
+				if errors.Is(err, ErrVKServiceUnavailable) {
+					outcome = "service_unavailable"
+				}
+				c.log.Warnf("[STREAM %d] [Captcha] event=CAPTCHA_SUBMIT_RESULT outcome=%s error=%v", streamID, outcome, err)
+			}
 			return "", err
 		}
 
 		if errObj, hasErr := resp["error"].(map[string]any); hasErr {
 			captchaErr := captcha.ParseError(errObj)
+			if captchaSubmitted {
+				outcome := "rejected"
+				if captchaErr != nil && captchaErr.IsCaptcha() {
+					outcome = "challenge_repeated"
+				}
+				c.log.Warnf("[STREAM %d] [Captcha] event=CAPTCHA_SUBMIT_RESULT outcome=%s response=%s", streamID, outcome, captcha.SafeResponse(resp))
+			}
 			if captchaErr != nil && captchaErr.IsCaptcha() {
 				retryData, err := c.solveCaptcha(ctx, httpClient, profile, streamID, link, escapedName, token1, captchaErr)
+				if errors.Is(err, errManualFreshChallenge) && !manualChallengeRefreshed {
+					// The automatic check consumed its challenge. Ask for one fresh
+					// challenge for the user's browser, keeping this auth session,
+					// client_id, cookies and identity. Never loop this refresh.
+					manualChallengeRefreshed = true
+					captchaSubmitted = false
+					data = initialData
+					continue
+				}
 				if err != nil {
 					return "", err
 				}
+				captchaSubmitted = true
 				data = retryData
 				continue
 			}
@@ -46,16 +73,25 @@ func (c *Client) fetchCallToken(
 				c.log.Errorf("[STREAM %d] [VK Auth] terminal link error: %v", streamID, termErr)
 				return "", termErr
 			}
-			return "", fmt.Errorf("VK API error: %v", errObj)
+			return "", fmt.Errorf("VK API error: response=%s", captcha.SafeResponse(errObj))
 		}
 
 		respMap, ok := resp["response"].(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("unexpected getAnonymousToken response: %v", resp)
+			if captchaSubmitted {
+				c.log.Warnf("[STREAM %d] [Captcha] event=CAPTCHA_SUBMIT_RESULT outcome=invalid_response response=%s", streamID, captcha.SafeResponse(resp))
+			}
+			return "", fmt.Errorf("unexpected getAnonymousToken response: response=%s", captcha.SafeResponse(resp))
 		}
 		token2, ok := respMap["token"].(string)
-		if !ok {
-			return "", fmt.Errorf("missing token in response: %v", resp)
+		if !ok || token2 == "" {
+			if captchaSubmitted {
+				c.log.Warnf("[STREAM %d] [Captcha] event=CAPTCHA_SUBMIT_RESULT outcome=invalid_response response=%s", streamID, captcha.SafeResponse(resp))
+			}
+			return "", fmt.Errorf("missing token in response: response=%s", captcha.SafeResponse(resp))
+		}
+		if captchaSubmitted {
+			c.log.Infof("[STREAM %d] [Captcha] event=CAPTCHA_SUBMIT_RESULT outcome=accepted", streamID)
 		}
 		return token2, nil
 	}
@@ -98,11 +134,22 @@ func (c *Client) solveCaptcha(
 	link, escapedName, token1 string,
 	captchaErr *captcha.Error,
 ) (retryData string, err error) {
+	if c.advancedCaptcha {
+		return c.solveAdvancedCaptcha(ctx, httpClient, profile, streamID, link, escapedName, token1, captchaErr)
+	}
+	if c.browserSolve != nil && !c.manualOnly {
+		return c.solveBrowserCaptcha(ctx, profile, streamID, link, escapedName, token1, captchaErr)
+	}
 	attempt := c.captchaAttempt
 	c.captchaAttempt++
 
-	solveMode, hasSolveMode := CaptchaSolveModeForAttempt(attempt, c.manualOnly)
+	solveMode, hasSolveMode := CaptchaSolveModeForAttempt(attempt, c.manualOnly || c.autoRejected.Load())
 	if !hasSolveMode {
+		if c.autoRejected.Load() {
+			c.engageLockout(time.Minute)
+			c.log.Warnf("[STREAM %d] [Captcha] CAPTCHA_MANUAL_NOT_ACCEPTED; pausing requests for 60 seconds, identity kept", streamID)
+			return "", errors.Join(ErrCaptchaWaitRequired, captcha.ErrBotRejected)
+		}
 		c.log.Warnf("[STREAM %d] [Captcha] No more solve modes available (attempt %d)", streamID, attempt+1)
 		c.burnPersona(streamID)
 		c.engageLockout(60 * time.Second)
@@ -115,6 +162,36 @@ func (c *Client) solveCaptcha(
 
 	var successToken string
 	var solveErr error
+	started := time.Now()
+	mode := "auto"
+	if solveMode == CaptchaSolveModeManual {
+		mode = "manual"
+	}
+	c.log.Infof("[STREAM %d] [Captcha] event=CAPTCHA_SOLVE_STARTED mode=%s attempt=%d", streamID, mode, attempt+1)
+	defer func() {
+		outcome := "token_received"
+		cause := solveErr
+		if cause == nil {
+			cause = err
+		}
+		switch {
+		case ctx.Err() != nil:
+			outcome = "cancelled"
+		case errors.Is(cause, captcha.ErrRateLimited):
+			outcome = "rate_limited"
+		case errors.Is(cause, captcha.ErrUnavailable):
+			outcome = "service_unavailable"
+		case errors.Is(cause, context.DeadlineExceeded):
+			outcome = "timed_out"
+		case cause != nil:
+			outcome = "failed"
+		}
+		logResult := c.log.Infof
+		if cause != nil {
+			logResult = c.log.Warnf
+		}
+		logResult("[STREAM %d] [Captcha] event=CAPTCHA_SOLVE_RESULT mode=%s attempt=%d outcome=%s duration=%s", streamID, mode, attempt+1, outcome, time.Since(started).Truncate(time.Millisecond))
+	}()
 
 	switch solveMode {
 	case CaptchaSolveModeAuto:
@@ -164,7 +241,7 @@ func (c *Client) solveCaptcha(
 			}
 		case <-manualCtx.Done():
 			if errors.Is(manualCtx.Err(), context.DeadlineExceeded) {
-				solveErr = fmt.Errorf("manual captcha timed out after 3m")
+				solveErr = fmt.Errorf("manual captcha timed out after 3m: %w", manualCtx.Err())
 			} else {
 				solveErr = fmt.Errorf("manual captcha interrupted: %w", manualCtx.Err())
 			}
@@ -175,14 +252,38 @@ func (c *Client) solveCaptcha(
 	// Сессию свернули (стоп, смена сети, рецикл) - решателю просто не дали доработать.
 	// Считать это провалом значит жечь поколение персоны и вешать lockout на своих же
 	// перезапусках.
+	if solveErr == nil && successToken == "" {
+		solveErr = errors.New("captcha solver returned an empty success token")
+	}
+
 	if solveErr != nil && ctx.Err() != nil {
 		c.log.Warnf("[STREAM %d] [Captcha] solve interrupted by shutdown: %v", streamID, solveErr)
 		return "", solveErr
 	}
 
+	if solveMode == CaptchaSolveModeAuto && errors.Is(solveErr, captcha.ErrBotRejected) {
+		c.autoRejected.Store(true)
+		c.captchaAttempt = 0
+		c.log.Warnf("[STREAM %d] [Captcha] CAPTCHA_BOT_REJECTED; automatic checks disabled until process restart, identity kept; browser verification required", streamID)
+		if c.manualSolve == nil {
+			c.engageLockout(time.Minute)
+			return "", errors.Join(ErrCaptchaWaitRequired, solveErr)
+		}
+		return "", errManualFreshChallenge
+	}
+
 	if solveErr != nil && errors.Is(solveErr, captcha.ErrRateLimited) {
 		c.captchaAttempt = attempt
-		return "", c.captchaLimited(streamID)
+		return "", c.rateLimited(streamID, solveErr)
+	}
+	if solveErr != nil && solveMode == CaptchaSolveModeManual && c.onAuthWait != nil {
+		c.onAuthWait()
+		return "", errors.Join(ErrCaptchaWaitRequired, solveErr)
+	}
+	if solveErr != nil && c.autoRejected.Load() && solveMode == CaptchaSolveModeManual {
+		c.engageLockout(time.Minute)
+		c.log.Warnf("[STREAM %d] [Captcha] CAPTCHA_MANUAL_WAIT; pausing requests for 60 seconds, identity kept", streamID)
+		return "", errors.Join(ErrCaptchaWaitRequired, solveErr)
 	}
 	if solveErr != nil && errors.Is(solveErr, captcha.ErrUnavailable) {
 		c.captchaAttempt = attempt
@@ -227,4 +328,44 @@ func buildCaptchaRetryData(link, escapedName, token1 string, captchaErr *captcha
 		link, escapedName, captchaErr.CaptchaSid, neturl.QueryEscape(successToken),
 		captchaErr.CaptchaTs, captchaErr.CaptchaAttempt, token1,
 	)
+}
+
+// The Android host runs the official browser page, then exposes the same
+// challenge manually when needed. One challenge per authorization attempt.
+func (c *Client) solveBrowserCaptcha(ctx context.Context, profile browserprofile.Profile, streamID int, link, escapedName, token1 string, e *captcha.Error) (string, error) {
+	if c.captchaAttempt > 0 {
+		if c.onAuthWait != nil {
+			c.onAuthWait()
+		}
+		return "", errors.Join(ErrCaptchaWaitRequired, errors.New("browser verification not accepted; explicit resume required"))
+	}
+	c.captchaAttempt++
+	verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	started := time.Now()
+	token, err := c.browserSolve(verifyCtx, e, c.dialer, profile)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if err == nil && token == "" {
+		err = errors.New("browser verification returned no token")
+	}
+	outcome := "token_received"
+	if err != nil {
+		outcome = "waiting_user"
+	}
+	c.log.Infof("[STREAM %d] [Captcha] event=CAPTCHA_SOLVE_RESULT mode=browser outcome=%s duration=%s", streamID, outcome, time.Since(started).Truncate(time.Millisecond))
+	if errors.Is(err, captcha.ErrRateLimited) {
+		return "", c.rateLimited(streamID, err)
+	}
+	if err != nil {
+		if c.onAuthWait != nil {
+			c.onAuthWait()
+		}
+		return "", errors.Join(ErrCaptchaWaitRequired, err)
+	}
+	if e.CaptchaAttempt == "" || e.CaptchaAttempt == "0" {
+		e.CaptchaAttempt = "1"
+	}
+	return buildCaptchaRetryData(link, escapedName, token1, e, token), nil
 }

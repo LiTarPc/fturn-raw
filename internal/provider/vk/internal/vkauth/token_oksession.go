@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samosvalishe/free-turn-proxy/internal/provider/vk/internal/browserprofile"
+	"github.com/samosvalishe/free-turn-proxy/internal/provider/vk/internal/captcha"
 
 	tlsclient "github.com/bogdanfinn/tls-client"
 )
@@ -21,7 +22,7 @@ func (c *Client) fetchOkRuSession(ctx context.Context, httpClient tlsclient.Http
 	}
 	sessionKey, ok := resp["session_key"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing session_key in response: %v", resp)
+		return "", fmt.Errorf("missing session_key in response: response=%s", captcha.SafeResponse(resp))
 	}
 	return sessionKey, nil
 }

@@ -1,11 +1,10 @@
-# Raw client 1.0.0: Linux and Android
+# Raw client 1.1.0: Linux and Android
 
-These are Raw client core 1.0.0 builds. Raw server 1.0.0 enables up to three
+These are Raw client core 1.1.0 builds. Raw server 1.1.0 enables up to three
 concurrent client processes sharing one configuration link/key by default.
 Server-side forwarding/NAT must cover the entire translated address pool.
-The previous server 0.1.10 still permits only one process per key. The Windows
-UI remains version 0.1.13; client and server core versions are independently
-1.0.0. See docs/raw-server.md and docs/raw-versions.md.
+The previous server 0.1.10 still permits only one process per key. The Windows UI has its own releases; client and server core versions are
+1.1.0. See docs/raw-server.md and docs/raw-versions.md.
 
 ## Linux amd64 / arm64
 
@@ -28,7 +27,7 @@ The CLI takes explicit arguments; it does not import `fturnraw://` links.
 
 ## Android application (arm64-v8a, no root)
 
-`fturn-raw-client-1.0.0-android-arm64-vpnservice.zip` contains
+`fturn-raw-client-1.1.0-android-arm64-vpnservice.zip` contains
 `arm64-v8a/libfturnraw.so`. This is a PIE executable launched by ProcessBuilder,
 not a JNI library or an AAR. It matches the existing Fturn RAW Android app:
 
@@ -49,7 +48,7 @@ this executable. The existing application imports `fturnraw://` configurations.
 
 ## Android Termux CLI (arm64, root required)
 
-`fturn-raw-client-1.0.0-android-arm64-termux.zip` contains `raw-client`.
+`fturn-raw-client-1.1.0-android-arm64-termux.zip` contains `raw-client`.
 This variant uses the `fturntermux` Go build tag to create/configure `/dev/net/tun`
 directly. It does not expect a VpnService descriptor and is distinct from the
 application executable. It requires root, kernel TUN support, access allowed by
@@ -71,7 +70,7 @@ mode needs validation on the target rooted phone; SELinux policies vary.
 
 ## Rebuild from this source
 
-PowerShell, Go 1.26.6 or newer:
+PowerShell, Go 1.26.10:
 
 ```powershell
 ./scripts/build-platform-clients.ps1
@@ -82,3 +81,7 @@ The Android dependency github.com/wlynxg/anet v0.0.5 requires linker option
 CGO_ENABLED=0, and buildmode=pie. Version is read from
 `internal/buildinfo/core-version.txt`; it is not hard-coded to a test label.
 The script writes binaries under `dist/platform-clients/`.
+
+## Advanced CAPTCHA host integration
+
+The opt-in -advanced-captcha mode needs a compatible application/browser host; see internal/captchaipc/PROTOCOL.md. The standalone core does not create Android WebView. Manual/legacy behavior remains available. This release includes the verified shutdown and post-deadline cancellation fixes from RAW android.7.

@@ -1,45 +1,11 @@
-# FturnRaw version numbers
+# FturnRaw component versions
 
-Application, client core and server core have independent version numbers.
-The settings panel reads the client core version from `runtime/raw-client.exe --version`.
-It does not report the version installed on the remote server.
+Release v1.1.0 stamps both client core and server core as 1.1.0. The source basis
+is RAW android.7 from stable Fturn Android 4.3.8. Android application and Windows
+interface versions are independent; this core release does not rebuild either UI.
 
-| Component | Previous saved release | New multi-device build |
-| --- | --- | --- |
-| Windows application / interface | 0.1.13 | 0.1.13 (interface retained) |
-| Raw client core | 0.1.12 | 1.0.0 |
-| Raw server core | 0.1.10 | 1.0.0 |
+Check raw-client --version (FturnRaw core 1.1.0) and raw-server --version
+(FturnRaw server 1.1.0). Existing 0.1.x, 1.0.0 and 1.0.1-beta releases remain available.
 
-The previous application 0.1.13 intentionally kept the exact core from package
-0.1.12. The server 0.1.10 had already enabled rtpopus2 and rtpopus3. Client
-0.1.11 updated online CIDR refresh, and client 0.1.12 introduced the experimental
-TCP flow uplink scheduler; neither required a server update. The old server
-allowed one client process per key and replaced it when another connected.
-
-Raw 1.0.0 adds multiple concurrent clients sharing one link, with a default limit
-of three devices. The server must be upgraded to enable this behavior; a newer
-client alone cannot add it to an old server. Existing client links remain usable.
-Forwarding/NAT must cover all assigned server-side addresses; see raw-server.md.
-
-Current client core version: `internal/buildinfo/core-version.txt`.
-Current server core version: `internal/buildinfo/server-version.txt`.
-Application version: `ui/newservice/wails.json` (`info.productVersion`).
-Server and UI build scripts stamp the matching component version.
-
-Check the exact binaries:
-
-```powershell
-.\runtime\raw-client.exe --version
-# FturnRaw core 1.0.0
-.\raw-server.exe --version
-# FturnRaw server 1.0.0
-```
-
-Historical 0.1.12/0.1.13 client archives and 0.1.10 server archives keep their
-original names and contents. New versioned output folders and suffixed packages
-keep both generations available locally.
-
-## Core reliability beta
-
-Client and server core: **1.0.1-beta**. Windows interface: **0.1.13**, unchanged.
-See [release notes](releases/v1.0.1-beta.md). The 1.0.0 entries above describe the previous release.
+The three-device default requires a multi-device RAW server and forwarding/NAT
+for its assigned addresses. rtpopus2/rtpopus3 wire profiles and keys remain usable.

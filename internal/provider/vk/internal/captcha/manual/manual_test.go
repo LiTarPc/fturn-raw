@@ -35,7 +35,7 @@ func TestRunCaptchaServerPresentsAfterListen(t *testing.T) {
 	}
 	defer listener.Close()
 	start := func(s *http.Server, _ string) error { go func() { _ = s.Serve(listener) }(); return nil }
-	got, err := runCaptchaServerWithStart(ctx, handler, "http://"+listener.Addr().String(), keyCh, "test", present, start)
+	got, err := runCaptchaServerWithStart(ctx, handler, "http://"+listener.Addr().String(), keyCh, nil, "test", present, start)
 	if err != nil {
 		t.Fatal(err)
 	}

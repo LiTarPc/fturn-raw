@@ -26,21 +26,22 @@ const deviceLimitRetryWindow = 2 * time.Minute
 var ErrDeviceLimit = errors.New("raw: server device limit reached; disconnect another device and retry")
 
 type ClientConfig struct {
-	workerToken  [16]byte // stable across reconnects of one logical worker
-	group        [16]byte
-	Peer         *net.UDPAddr
-	Address      netip.Addr
-	MTU          int
-	Profile      string
-	Key          []byte
-	Host, Port   string
-	TransportUDP bool
-	UplinkMode   string
-	Streams      int
-	Provider     provider.Provider
-	Connected    *atomic.Int32
-	OnTURN       func(net.IP)
-	Log          logx.Logger
+	allocatePacer *allocpace.Pacer // shared by workers, applied after credential waits
+	workerToken   [16]byte         // stable across reconnects of one logical worker
+	group         [16]byte
+	Peer          *net.UDPAddr
+	Address       netip.Addr
+	MTU           int
+	Profile       string
+	Key           []byte
+	Host, Port    string
+	TransportUDP  bool
+	UplinkMode    string
+	Streams       int
+	Provider      provider.Provider
+	Connected     *atomic.Int32
+	OnTURN        func(net.IP)
+	Log           logx.Logger
 }
 
 func (c ClientConfig) validate() error {
@@ -117,7 +118,7 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 			packets.enqueue(packet)
 		}
 	})
-	pacer := allocpace.New(allocpace.DefaultInterval)
+	cfg.allocatePacer = allocpace.New(allocpace.DefaultInterval)
 	for id := 1; id <= cfg.Streams; id++ {
 		workerCfg := cfg
 		if _, err := rand.Read(workerCfg.workerToken[:]); err != nil {
@@ -127,9 +128,6 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 		wg.Go(func() {
 			var limitSince time.Time
 			for runCtx.Err() == nil {
-				if !pacer.Wait(runCtx) {
-					return
-				}
 				err := clientStream(runCtx, dev, workerCfg, id, packets, retirements)
 				if runCtx.Err() != nil {
 					return
@@ -145,11 +143,17 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 					report(err)
 					return
 				}
-				cfg.Log.Warnf("RAW stream %d: %v; retrying", id, err)
+				retryDelay := 3 * time.Second
+				if errors.Is(err, provider.ErrBackoffActive) {
+					if until := cfg.Provider.BackoffUntilUnix(); until > time.Now().Unix() {
+						retryDelay = max(retryDelay, time.Until(time.Unix(until, 0)))
+					}
+				}
+				cfg.Log.Warnf("RAW stream %d: %v; retrying in %s", id, err, retryDelay.Round(time.Millisecond))
 				select {
 				case <-runCtx.Done():
 					return
-				case <-time.After(3 * time.Second):
+				case <-time.After(retryDelay):
 				}
 			}
 		})
@@ -163,14 +167,9 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 	}
 }
 
-func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, packets *uplinkQueue, retirements chan []byte) error {
-	if until := cfg.Provider.BackoffUntilUnix(); until > time.Now().Unix() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Until(time.Unix(until, 0))):
-		}
-	}
+func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, packets *uplinkQueue, retirements chan []byte) (retErr error) {
+	// The provider checks authorization cooldowns only when fetching credentials.
+	// Its valid cache must remain usable for reconnecting other worker groups.
 	getCreds := func(ctx context.Context, id int) (string, string, []string, error) {
 		creds, err := cfg.Provider.GetCredentials(ctx, id)
 		if err == nil && cfg.OnTURN != nil {
@@ -194,6 +193,12 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 				}
 			}
 		}
+		// Authorization can hold an entire credential group for seconds or minutes.
+		// Reserve the Allocate slot only after it finishes, otherwise all waiters
+		// consume their slots early and connect simultaneously when released.
+		if err == nil && !cfg.allocatePacer.Wait(ctx) {
+			return "", "", nil, ctx.Err()
+		}
 		return creds.User, creds.Pass, creds.ServerAddrs, err
 	}
 	stream, err := udprelay.DialTURNWithMaintenance(ctx, cfg.Host, cfg.Port, cfg.TransportUDP, cfg.Peer, id, getCreds, cfg.Log, true)
@@ -210,13 +215,15 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 	}
 	cfg.Provider.ResetErrors(id)
 	streamCtx, cancel := context.WithCancel(ctx)
+	var maintenanceFailed atomic.Bool
 	defer cancel()
-	stop := context.AfterFunc(streamCtx, func() { _ = relay.SetDeadline(time.Now()) })
-	defer stop()
+	stopRelayDeadline := stopRelayOnCancel(streamCtx, relay)
+	defer stopRelayDeadline()
 	go func() {
 		select {
 		case <-streamCtx.Done():
 		case <-stream.PermDead:
+			maintenanceFailed.Store(true)
 			cancel()
 		}
 	}()
@@ -244,10 +251,17 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 	if cfg.TransportUDP {
 		transport = "udp"
 	}
+	health := newStreamHealth()
+	cause := "normal"
+	defer func() { health.report(cfg.Log, id, transport, "closed", cause, stream.Maintenance) }()
+	lastHealthReport := time.Now()
 	cfg.Log.Infof("RAW stream %d ready: relay=%s client=%s MTU=%d profile=%s transport=%s (no WG/DTLS/KCP)", id, relay.LocalAddr(), cfg.Address, mtu, cfg.Profile, transport)
 	defer cfg.Log.Infof("RAW stream %d closed", id)
 	// Best effort shutdown frees the old worker immediately on quick reconnect.
 	defer func() {
+		// A started cancellation callback must finish before the goodbye write
+		// reopens its deadline. Keep cancellation active until teardown reaches here.
+		stopRelayDeadline()
 		var out [maxWire]byte
 		n, err := negotiated.encode(out[:], []byte{frameClose})
 		if err == nil {
@@ -260,38 +274,60 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 		wireBuf, plainBuf := make([]byte, maxWire+1), make([]byte, maxFrame)
 		lastValid := time.Now()
 		for {
-			_ = relay.SetReadDeadline(lastValid.Add(35 * time.Second))
-			n, addr, err := relay.ReadFrom(wireBuf)
+			n, addr, err := readClientPacket(streamCtx, relay, wireBuf, lastValid.Add(35*time.Second))
 			if err != nil {
 				readDone <- err
 				return
 			}
+			health.wirePackets.Add(1)
+			health.mark(&health.wireAt)
 			if addr.String() != cfg.Peer.String() {
+				health.foreign.Add(1)
 				continue
 			}
 			plain, err := negotiated.decode(plainBuf, wireBuf[:n])
 			if err != nil || len(plain) == 0 {
+				health.decodeReject.Add(1)
 				continue
 			}
+			health.mark(&health.decodedAt)
 			switch plain[0] {
 			case frameData, frameFragment:
 				packet, err := negotiated.fragments.accept(plain, cfg.MTU, time.Now())
 				if err != nil || packet == nil {
+					if err != nil {
+						health.invalidFrame.Add(1)
+					} else {
+						health.fragmentWait.Add(1)
+					}
 					continue
 				}
 				_, dst, err := ipv4(packet, cfg.MTU)
 				if err != nil || dst != cfg.Address {
+					health.invalidFrame.Add(1)
 					continue
 				}
 				lastValid = time.Now()
+				health.mark(&health.validAt)
+				health.validPackets.Add(1)
 				if _, err := dev.Write(packet); err != nil {
+					health.deviceWriteFailed.Store(true)
 					readDone <- err
 					return
 				}
 			case framePong, frameReady:
 				if len(plain) == 1 {
 					lastValid = time.Now()
+					health.mark(&health.validAt)
+					health.validPackets.Add(1)
+					if plain[0] == framePong {
+						health.mark(&health.pongAt)
+					}
+				} else {
+					health.invalidFrame.Add(1)
 				}
+			default:
+				health.invalidFrame.Add(1)
 			}
 		}
 	}()
@@ -327,9 +363,26 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 		var packet []byte
 		select {
 		case <-streamCtx.Done():
+			cause = "context_cancelled"
+			if maintenanceFailed.Load() {
+				cause = "turn_maintenance_failed"
+			}
 			return streamCtx.Err()
 		case err := <-readDone:
 			readerJoined = true
+			cause = "relay_read_error"
+			var timeout net.Error
+			if errors.As(err, &timeout) && timeout.Timeout() {
+				cause = "relay_read_timeout"
+			}
+			if health.deviceWriteFailed.Load() {
+				cause = "device_write_error"
+			}
+			if ctx.Err() != nil {
+				cause = "context_cancelled"
+			} else if maintenanceFailed.Load() {
+				cause = "turn_maintenance_failed"
+			}
 			return err
 		case packet = <-retirements:
 		case queued := <-pinned:
@@ -337,9 +390,15 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 		case queued := <-packets.shared:
 			packet = packets.take(queued)
 		case <-ticker.C:
+			if time.Since(lastHealthReport) >= time.Minute {
+				health.report(cfg.Log, id, transport, "active", "none", stream.Maintenance)
+				lastHealthReport = time.Now()
+			}
+			health.pings.Add(1)
 			packet = []byte{framePing}
 		}
 		if err := writeFrame(relay, cfg.Peer, negotiated, wireBuf, packet); err != nil {
+			cause = "relay_write_error"
 			return err
 		}
 	}
