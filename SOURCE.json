@@ -2,7 +2,7 @@
   "coreVersion": "1.1.0",
   "serverVersion": "1.1.0",
   "goToolchain": "go1.26.10",
-  "sourceSnapshotSha256": "82e87626185f277ca552c2f8e52a35b01072e48af36cab974d08a34c6a57f1ae",
+  "sourceSnapshotSha256": "67f5449a1cb235e98fc609b0c28ccdeafc08341d3908348c26ce21258a23366d",
   "snapshotAlgorithm": "sha256(UTF-8 canonical JSON of files; sort_keys=True, separators=(comma,colon))",
   "origin": {
     "originRepository": "https://github.com/LiTarPc/Fturn-Android",
@@ -343,11 +343,11 @@
     },
     {
       "path": "internal/provider/vk/internal/captcha/manual/inject.js",
-      "sha256": "fa85ea57da2b7663ba5388e5c6192adad175b22df22fdd60afd383f512340f78"
+      "sha256": "48688a72cea4a6e035c98d5965cb0273d92a9b147b837d0c276571a4a5d0e1b6"
     },
     {
       "path": "internal/provider/vk/internal/captcha/manual/inject_fixture_test.cjs",
-      "sha256": "5ce43dd16ce510e84a9ccc3a3edeecb88b75f685a81fc0830c2165af1795497f"
+      "sha256": "b3f98d3ba01be6e3a3ff1c4d25ae1e194916da05015e26f26ab7a875db8dd1d7"
     },
     {
       "path": "internal/provider/vk/internal/captcha/manual/limits.go",
@@ -359,7 +359,7 @@
     },
     {
       "path": "internal/provider/vk/internal/captcha/manual/manual.go",
-      "sha256": "d1cb54e646847700a31c47cb617d1afd7448c7009701c081e439cdd6a5251d3e"
+      "sha256": "08401413abbb08054bde3623bbd6acc7b504e4d63b7d92bda6b9f9f7ec092f30"
     },
     {
       "path": "internal/provider/vk/internal/captcha/manual/manual_test.go",
@@ -368,6 +368,18 @@
     {
       "path": "internal/provider/vk/internal/captcha/manual/privacy_test.go",
       "sha256": "62897f70edce7695613de9bc05cd31cbd48f9568b403a4e1bc2f96e55385c244"
+    },
+    {
+      "path": "internal/provider/vk/internal/captcha/manual/resource_paths_test.mjs",
+      "sha256": "96ac6d0d9678b0fa9dfd9bd2c25546887e13bc19358f3588ea4c6c59c52be85a"
+    },
+    {
+      "path": "internal/provider/vk/internal/captcha/manual/resource_proxy.go",
+      "sha256": "bb32facb0bf7d781c0fbefabf015584c781aa1e76c931b295e7666cf34701e2f"
+    },
+    {
+      "path": "internal/provider/vk/internal/captcha/manual/resource_proxy_test.go",
+      "sha256": "77451ad8023a9112326ca35c35022afff043ed8260d2518a5e3ba0157b61c6f6"
     },
     {
       "path": "internal/provider/vk/internal/captcha/manual/webview_fixture_test.go",
@@ -1633,5 +1645,11 @@
       "path": "third_party/turn/stun_conn.go",
       "sha256": "d9386a1d1a08c608a975726b1ac453d9c7076c81fdeae467f6beab4109873da6"
     }
-  ]
+  ],
+  "unreleasedChanges": {
+    "topic": "Manual CAPTCHA resource directory preservation",
+    "baseCommit": "11265eb059a6894e2c57109602badcf91660380f",
+    "liveVKManualCompletionVerified": false,
+    "releaseOrTagRequested": false
+  }
 }
