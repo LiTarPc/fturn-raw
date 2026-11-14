@@ -257,8 +257,12 @@ func rewriteHTMLAttrsServerSide(html string, targetURL *neturl.URL) string {
 		if strings.HasPrefix(absURL, localOrigin) {
 			return rawURL
 		}
-		// прочие абсолютные URL -> через generic_proxy
-		return "/generic_proxy?proxy_url=" + neturl.QueryEscape(absURL)
+		// Preserve external resource directories for relative JS/CSS imports.
+		target, err := neturl.Parse(absURL)
+		if err != nil || target.Host == "" {
+			return rawURL
+		}
+		return localResourceURL(target)
 	}
 
 	var placeholders = make(map[string]string)
@@ -666,63 +670,9 @@ func solveViaProxy(ctx context.Context, redirectURI string, dialer net.Dialer, p
 		_, _ = fmt.Fprint(w, "ok")
 	})
 
-	mux.HandleFunc("/generic_proxy", func(w http.ResponseWriter, r *http.Request) {
-		targetAuthURL := r.URL.Query().Get("proxy_url")
-		targetParsed, err := neturl.Parse(targetAuthURL)
-		if err != nil || targetParsed.Host == "" {
-			http.Error(w, "Bad URL", http.StatusBadRequest)
-			return
-		}
-		if !isAllowedProxyHost(targetParsed.Hostname()) {
-			http.Error(w, "Forbidden host", http.StatusForbidden)
-			return
-		}
-		genericReverse := &httputil.ReverseProxy{
-			Transport:    transport,
-			ErrorHandler: proxy.ErrorHandler,
-			Rewrite: func(req *httputil.ProxyRequest) {
-				req.Out.URL.Path = targetParsed.Path
-				req.Out.URL.RawQuery = targetParsed.RawQuery
-				rewriteProxyRequest(req.Out, targetParsed)
-			},
-			ModifyResponse: func(res *http.Response) error {
-				// убираем security-заголовки, блокирующие cross-origin загрузку
-				// статики (JS/CSS) при проксировании.
-				for _, h := range []string{
-					"Content-Security-Policy",
-					"Content-Security-Policy-Report-Only",
-					"X-Content-Security-Policy",
-					"X-WebKit-CSP",
-					"Cross-Origin-Opener-Policy",
-					"Cross-Origin-Embedder-Policy",
-					"Cross-Origin-Resource-Policy",
-					"X-Frame-Options",
-					"Strict-Transport-Security",
-				} {
-					res.Header.Del(h)
-				}
-				// разрешаем cross-origin доступ к ресурсу
-				res.Header.Set("Access-Control-Allow-Origin", "*")
-
-				// captchaNotRobot.check идёт через /generic_proxy на api.vk.com/api.vk.ru.
-				if strings.Contains(targetAuthURL, "captchaNotRobot.check") {
-					bodyBytes, readErr := io.ReadAll(res.Body)
-					if readErr == nil {
-						_ = res.Body.Close()
-						res.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-						res.ContentLength = int64(len(bodyBytes))
-						res.Header.Set("Content-Length", fmt.Sprint(len(bodyBytes)))
-						if !capturePow {
-							notifyKey(keyCh, extractSuccessToken(bodyBytes))
-						}
-					}
-				}
-
-				return nil
-			},
-		}
-		genericReverse.ServeHTTP(w, r)
-	})
+	resourceHandler := externalResourceHandler(transport, capturePow, keyCh, proxy.ErrorHandler)
+	mux.HandleFunc("/generic_proxy", resourceHandler)
+	mux.HandleFunc(resourceProxyPrefix, resourceHandler)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		Log.Debugf("[Captcha Proxy] HTTP %s %s", r.Method, captcha.SafeURL(r.URL.String()))

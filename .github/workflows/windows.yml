@@ -3,6 +3,8 @@ on:
   push:
     branches: [codex/core-1.1.0]
     tags: [v1.1.0]
+  pull_request:
+    branches: [codex/core-1.1.0]
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,6 +40,8 @@ jobs:
         run: go test -mod=readonly ./internal/rawvpn -run '^(TestOrderlyClientCancellationReleasesSlot|TestCancellationDeadlineIsJoinedBeforeGoodbye|TestStoppingCancellationDeadlineTwicePreventsCallback|TestCancellationDeadlineStillInterruptsActiveWrite|TestReadClientPacketChecksCancellationAfterDeadline|TestReadClientPacketStillReadsLiveContext)$' -count=100 -timeout=5m
       - name: Browser capture offline fixture
         run: node internal/provider/vk/internal/captcha/manual/inject_fixture_test.cjs
+      - name: Captcha resource path and fetch Request regressions
+        run: node internal/provider/vk/internal/captcha/manual/resource_paths_test.mjs
       - name: Shared bypass tests
         working-directory: shared/bypass
         run: go test ./... -count=1
