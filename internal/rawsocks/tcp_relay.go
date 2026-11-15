@@ -4,9 +4,24 @@ import (
 	"context"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 )
+
+var relayBufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 128*1024)
+		return &buf
+	},
+}
+
+func copyWithPool(dst io.Writer, src io.Reader) error {
+	bp := relayBufPool.Get().(*[]byte)
+	defer relayBufPool.Put(bp)
+	_, err := io.CopyBuffer(dst, src, *bp)
+	return err
+}
 
 func markActivity(last *atomic.Int64, started time.Time) {
 	now := time.Since(started).Nanoseconds()
@@ -81,14 +96,14 @@ func relayTCP(ctx context.Context, client, upstream net.Conn, idle, halfCloseIdl
 	fromUpstream := activityConn{upstream, started, &last}
 	uploaded := make(chan struct{})
 	go func() {
-		if _, err := io.Copy(fromUpstream, fromClient); err != nil {
+		if err := copyWithPool(fromUpstream, fromClient); err != nil {
 			closeBoth()
 		} else {
 			peerEOF(upstream)
 		}
 		close(uploaded)
 	}()
-	if _, err := io.Copy(fromClient, fromUpstream); err != nil {
+	if err := copyWithPool(fromClient, fromUpstream); err != nil {
 		closeBoth()
 	} else {
 		peerEOF(client)

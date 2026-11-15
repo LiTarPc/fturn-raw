@@ -269,6 +269,7 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 			_, _ = relay.WriteTo(out[:n], cfg.Peer)
 		}
 	}()
+	var pingSentNs atomic.Int64
 	readDone := make(chan error, 1)
 	go func() {
 		wireBuf, plainBuf := make([]byte, maxWire+1), make([]byte, maxFrame)
@@ -322,6 +323,9 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 					health.validPackets.Add(1)
 					if plain[0] == framePong {
 						health.mark(&health.pongAt)
+						if sent := pingSentNs.Swap(0); sent > 0 {
+							path.recordRTT(time.Duration(time.Now().UnixNano() - sent))
+						}
 					}
 				} else {
 					health.invalidFrame.Add(1)
@@ -340,7 +344,7 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 			<-readDone
 		}
 	}()
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
 	wireBuf := make([]byte, maxWire)
 	defer func() {
@@ -395,6 +399,7 @@ func clientStream(ctx context.Context, dev Device, cfg ClientConfig, id int, pac
 				lastHealthReport = time.Now()
 			}
 			health.pings.Add(1)
+			pingSentNs.Store(time.Now().UnixNano())
 			packet = []byte{framePing}
 		}
 		if err := writeFrame(relay, cfg.Peer, negotiated, wireBuf, packet); err != nil {

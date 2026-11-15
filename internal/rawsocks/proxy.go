@@ -60,7 +60,7 @@ func openWithAssociationIdle(address netip.Addr, mtu, port int, password string,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &Device{ctx: ctx, cancel: cancel, listener: l, password: password, associationIdle: associationIdle, slots: make(chan struct{}, maxBridgeConnections), sockets: map[net.Conn]struct{}{}}
-	d.link = channel.New(1024, uint32(mtu), "")
+	d.link = channel.New(2048, uint32(mtu), "")
 	d.stack = stack.New(stack.Options{NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol}, TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol}})
 	if e := d.stack.CreateNIC(1, d.link); e != nil {
 		d.Close()
@@ -73,6 +73,15 @@ func openWithAssociationIdle(address netip.Addr, mtu, port int, password string,
 	d.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: 1}})
 	sack := tcpip.TCPSACKEnabled(true)
 	d.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &sack)
+	cc := tcpip.CongestionControlOption("cubic")
+	d.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &cc)
+	moderateRecv := tcpip.TCPModerateReceiveBufferOption(true)
+	d.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &moderateRecv)
+	// Bound per-socket gVisor buffers (default 1MB/4MB causes multi-second bufferbloat tails).
+	sendBufRange := tcpip.TCPSendBufferSizeRangeOption{Min: 16 << 10, Default: 128 << 10, Max: 512 << 10}
+	d.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &sendBufRange)
+	recvBufRange := tcpip.TCPReceiveBufferSizeRangeOption{Min: 16 << 10, Default: 128 << 10, Max: 512 << 10}
+	d.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &recvBufRange)
 	go d.accept()
 	go d.reportStats()
 	return d, nil
@@ -100,7 +109,7 @@ func (d *Device) Write(b []byte) (int, error) {
 	if len(b) < 20 || b[0]>>4 != 4 {
 		return 0, errors.New("RAW SOCKS requires IPv4 packets")
 	}
-	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(append([]byte(nil), b...))})
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(b)})
 	defer p.DecRef()
 	d.link.InjectInbound(ipv4.ProtocolNumber, p)
 	return len(b), nil
@@ -136,6 +145,11 @@ func (d *Device) accept() {
 		c, e := d.listener.Accept()
 		if e != nil {
 			return
+		}
+		if tc, ok := c.(*net.TCPConn); ok {
+			_ = tc.SetNoDelay(true)
+			_ = tc.SetReadBuffer(128 << 10)
+			_ = tc.SetWriteBuffer(128 << 10)
 		}
 		select {
 		case d.slots <- struct{}{}:

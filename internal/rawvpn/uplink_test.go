@@ -252,3 +252,81 @@ func TestTCPFlowUplinkThroughRealTURN(t *testing.T) {
 		}
 	}
 }
+
+func TestUplinkNewFlowPrefersLeastLoadedPath(t *testing.T) {
+	q := newUplinkQueue(UplinkTCPFlow)
+	a := q.register(1)
+	b := q.register(2)
+	c := q.register(3)
+	// Simulate backlog on paths 1 and 2 while path 3 is idle.
+	for i := 0; i < 8; i++ {
+		a.packets <- uplinkPacket{plain: []byte{framePing}}
+		b.packets <- uplinkPacket{plain: []byte{framePing}}
+	}
+	b.packets <- uplinkPacket{plain: []byte{framePing}}
+	now := time.Now()
+	k, ok := tcpUplinkKey(tcpUplinkPacket(2000, 1, 64))
+	if !ok {
+		t.Fatal("TCP key missing")
+	}
+	picked := q.chooseLocked(k, now)
+	if picked != c {
+		t.Fatalf("expected least-loaded path 3, got %d (queue=%d)", picked.id, len(picked.packets))
+	}
+}
+
+func TestUplinkRetransmitPenalizesPathAndFailsOver(t *testing.T) {
+	q := newUplinkQueue(UplinkTCPFlow)
+	a := q.register(1)
+	b := q.register(2)
+	k, ok := tcpUplinkKey(tcpUplinkPacket(3000, 100, 64))
+	if !ok {
+		t.Fatal("TCP key missing")
+	}
+	base := time.Now()
+	if got := q.choosePacketLocked(k, 100, 24, true, base); got != a {
+		t.Fatalf("expected initial path 1, got %d", got.id)
+	}
+	if got := q.choosePacketLocked(k, 124, 24, true, base.Add(time.Millisecond)); got != a {
+		t.Fatalf("expected path 1 during normal advance, got %d", got.id)
+	}
+	// Retransmission after cooldown must penalize path 1 and failover to path 2.
+	retxAt := base.Add(uplinkRetransmitCooldown + 10*time.Millisecond)
+	if got := q.choosePacketLocked(k, 100, 24, true, retxAt); got != b {
+		t.Fatalf("expected failover to path 2 on retransmit, got %d", got.id)
+	}
+	if q.failovers.Load() != 1 {
+		t.Fatalf("expected 1 failover, got %d", q.failovers.Load())
+	}
+	// Subsequent SACK retransmits in the same window must stay on path 2 cleanly.
+	if got := q.choosePacketLocked(k, 100, 24, true, retxAt.Add(5*time.Millisecond)); got != b {
+		t.Fatalf("expected SACK retransmit burst to stay on path 2, got %d", got.id)
+	}
+	// New flow while path 1 is penalized must avoid path 1.
+	k2, _ := tcpUplinkKey(tcpUplinkPacket(3001, 1, 64))
+	if got := q.choosePacketLocked(k2, 1, 24, true, retxAt.Add(10*time.Millisecond)); got != b {
+		t.Fatalf("expected new flow to avoid penalized path 1, got %d", got.id)
+	}
+}
+
+func TestUplinkFlowletMigratesToIdlePathWithoutBurstReordering(t *testing.T) {
+	q := newUplinkQueue(UplinkTCPFlow)
+	a := q.register(1)
+	k, _ := tcpUplinkKey(tcpUplinkPacket(4000, 1, 1200))
+	t0 := time.Now()
+	for i := uint32(0); i < uplinkFlowletMinPackets; i++ {
+		if got := q.choosePacketLocked(k, 1+i*1200, 1200, true, t0.Add(time.Duration(i)*time.Millisecond)); got != a {
+			t.Fatalf("packet %d unexpectedly moved off path 1", i)
+		}
+	}
+	b := q.register(2)
+	// Intra-burst packet (< flowlet gap) must stay on path 1.
+	if got := q.choosePacketLocked(k, 1+uplinkFlowletMinPackets*1200, 1200, true, t0.Add((uplinkFlowletMinPackets+1)*time.Millisecond)); got != a {
+		t.Fatalf("intra-burst packet moved off path 1 to %d", got.id)
+	}
+	// After a clean flowlet gap and switch cooldown, migrate to idle path 2.
+	gapAt := t0.Add(uplinkSwitchCooldown + uplinkFlowletGap + 20*time.Millisecond)
+	if got := q.choosePacketLocked(k, 1+(uplinkFlowletMinPackets+1)*1200, 1200, true, gapAt); got != b {
+		t.Fatalf("expected flowlet migration to idle path 2, got %d", got.id)
+	}
+}
