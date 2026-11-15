@@ -22,8 +22,7 @@ type Error struct {
 // Возвращает nil, если обязательные поля отсутствуют.
 func ParseError(errData map[string]any) *Error {
 	codeFloat, ok := errData["error_code"].(float64)
-	if !ok {
-		Log.Warnf("[Captcha] missing error_code in error data")
+	if !ok || codeFloat != 14 {
 		return nil
 	}
 	code := int(codeFloat)
@@ -52,7 +51,7 @@ func ParseError(errData map[string]any) *Error {
 		if parsed, err := neturl.Parse(redirectURI); err == nil {
 			sessionToken = parsed.Query().Get("session_token")
 		} else {
-			Log.Warnf("[Captcha] failed to parse redirect_uri: %v", err)
+			Log.Warnf("[Captcha] failed to parse redirect_uri: %T", err)
 			return nil
 		}
 	}

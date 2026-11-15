@@ -23,6 +23,8 @@ import (
 	"github.com/samosvalishe/free-turn-proxy/internal/randx"
 )
 
+var ErrBrowserPowInvalid = errors.New("browser pow invalid for current challenge")
+
 var Log logx.Logger = logx.Nop()
 
 func SetLogger(l logx.Logger) { Log = logx.OrNop(l) }
@@ -41,7 +43,9 @@ var (
 
 	ErrRateLimited      = errors.New("captcha session rate limit reached")
 	errCaptchaRateLimit = ErrRateLimited
-	errCaptchaBot       = errors.New("captcha bot challenge")
+	// ErrBotRejected is a provider refusal, not a request to rotate identity or retry automation.
+	ErrBotRejected = errors.New("captcha bot challenge")
+	errCaptchaBot  = ErrBotRejected
 
 	ErrUnavailable = errors.New("captcha unavailable")
 
@@ -74,6 +78,7 @@ type captchaCheck struct {
 	SuccessToken string
 	ShowType     string
 	Content      captchaContentRef
+	details      string
 }
 
 type captchaShowTypeError struct {
@@ -102,9 +107,10 @@ type captchaSession struct {
 	checked bool
 
 	// browserFP - visitorId FingerprintJS: у живого посетителя стабилен между сессиями.
-	browserFP string
-	debugInfo string
-	powHash   string
+	browserFP  string
+	debugInfo  string
+	powHash    string
+	browserPow string
 
 	// downlink - у живого клиента одно значение на всю captcha, не отдельное на тик.
 	downlink float64
@@ -132,6 +138,35 @@ func Solve(
 	profile browserprofile.Profile,
 	log logx.Logger,
 ) (string, error) {
+	return solve(ctx, captchaErr, streamID, client, profile, log, "")
+}
+
+// SolveWithBrowserPow uses the completed PoW envelope produced by the real
+// browser for this captcha flow.
+func SolveWithBrowserPow(
+	ctx context.Context,
+	captchaErr *Error,
+	streamID int,
+	client tlsclient.HttpClient,
+	profile browserprofile.Profile,
+	log logx.Logger,
+	browserPow string,
+) (string, error) {
+	if browserPow == "" {
+		return "", errors.New("browser pow envelope is empty")
+	}
+	return solve(ctx, captchaErr, streamID, client, profile, log, browserPow)
+}
+
+func solve(
+	ctx context.Context,
+	captchaErr *Error,
+	streamID int,
+	client tlsclient.HttpClient,
+	profile browserprofile.Profile,
+	log logx.Logger,
+	browserPow string,
+) (string, error) {
 	if captchaErr == nil || captchaErr.SessionToken == "" {
 		return "", fmt.Errorf("no session_token in redirect_uri")
 	}
@@ -139,16 +174,17 @@ func Solve(
 	l.Infof("[STREAM %d] [Captcha] Solving VK Smart Captcha automatically...", streamID)
 
 	s := &captchaSession{
-		ctx:       ctx,
-		client:    client,
-		profile:   profile,
-		domain:    captchaDomain,
-		apiHost:   captchaAPIHost,
-		log:       l,
-		browserFP: profile.VisitorID,
-		downlink:  sessionDownlink(),
-		sensors:   defaultSensorConfig(),
-		started:   time.Now(),
+		ctx:        ctx,
+		client:     client,
+		profile:    profile,
+		domain:     captchaDomain,
+		apiHost:    captchaAPIHost,
+		log:        l,
+		browserFP:  profile.VisitorID,
+		browserPow: browserPow,
+		downlink:   sessionDownlink(),
+		sensors:    defaultSensorConfig(),
+		started:    time.Now(),
 	}
 
 	var solveErr error
@@ -160,7 +196,7 @@ func Solve(
 		}
 		l.Debugf("[STREAM %d] [Captcha] solve attempt %d failed: %v", streamID, attempt, solveErr)
 		// Повторяем только то, что не дошло до check.
-		if s.checked || errors.Is(solveErr, errCaptchaRateLimit) || errors.Is(solveErr, errCaptchaBot) {
+		if s.browserPow != "" || s.checked || errors.Is(solveErr, errCaptchaRateLimit) || errors.Is(solveErr, errCaptchaBot) {
 			return "", solveErr
 		}
 
@@ -189,11 +225,19 @@ func (s *captchaSession) solveOnce(captchaErr *Error) (string, error) {
 
 	page, err := parseCaptchaPage(html)
 	if err != nil {
-		s.logger().Debugf("[Captcha] page parse failed: %v (bytes=%d); pow script near: %s", err, len(html), powSnippet(html))
+		s.logger().Debugf("[Captcha] page parse failed: %v (bytes=%d)", err, len(html))
 		return "", err
 	}
 
 	// Браузер тянет подресурсы параллельно с исполнением скрипта, не после него.
+	if s.browserPow != "" {
+		s.powHash, err = validateBrowserPow(s.browserPow, page.Pow)
+		if err != nil {
+			return "", fmt.Errorf("%w: %s", ErrBrowserPowInvalid, err)
+		}
+		s.profile = profileFromBrowserPow(s.profile, s.browserPow)
+	}
+
 	assets := parsePageAssets(html)
 	assetsDone := make(chan struct{})
 	go func() {
@@ -204,9 +248,11 @@ func (s *captchaSession) solveOnce(captchaErr *Error) (string, error) {
 	defer func() { <-assetsDone }()
 
 	s.logger().Debugf("[Captcha] solving pow difficulty=%d assets=%d", page.Pow.Difficulty, len(assets))
-	s.powHash, err = s.powEnvelope(page.Pow)
-	if err != nil {
-		return "", err
+	if s.browserPow == "" {
+		s.powHash, err = s.powEnvelope(page.Pow)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	s.debugInfo = page.DebugInfo
@@ -404,10 +450,10 @@ func (s *captchaSession) fetchCaptchaHTML(redirectURI string) (string, error) {
 		"Referer": "https://" + s.domain + "/",
 	})
 	if err != nil {
+		if status == 429 {
+			return "", fmt.Errorf("%w: %w", ErrUnavailable, err)
+		}
 		return "", err
-	}
-	if status == 429 {
-		return "", fmt.Errorf("%w: captcha page HTTP 429", errors.Join(ErrUnavailable, ErrRateLimited))
 	}
 	if status < 200 || status > 299 {
 		return "", fmt.Errorf("%w: captcha page http %d (bytes=%d)", ErrUnavailable, status, len(body))
@@ -570,9 +616,6 @@ func (s *captchaSession) captchaRequest(method string, form [][2]string) (map[st
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("captcha api decode: %w", err)
 	}
-	if captchaLimitedResponse(out) {
-		return nil, ErrRateLimited
-	}
 	s.logger().Debugf("[Captcha] api %s response=%s", method, captchaAPIResponseSummary(out))
 	return out, nil
 }
@@ -619,16 +662,17 @@ func (s *captchaSession) performCaptchaCheck(
 func parseCaptchaCheck(raw map[string]any) (*captchaCheck, error) {
 	resp, ok := raw["response"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid captcha check response: %v", raw)
+		return nil, fmt.Errorf("invalid captcha check response: response=%s", SafeResponse(raw))
 	}
 	out := &captchaCheck{
 		Status:       captchaStringifyAny(resp["status"]),
 		SuccessToken: captchaStringifyAny(resp["success_token"]),
 		ShowType:     captchaStringifyAny(resp["show_captcha_type"]),
 		Content:      parseSliderContentRef(resp["content_settings"]),
+		details:      SafeResponse(raw),
 	}
 	if out.Status == "" {
-		return nil, fmt.Errorf("captcha check status missing: %v", raw)
+		return nil, fmt.Errorf("captcha check status missing: response=%s", SafeResponse(raw))
 	}
 	return out, nil
 }
@@ -668,10 +712,10 @@ func (s *captchaSession) solveCheckboxCaptcha(sessionToken string) (string, erro
 		return "", errCaptchaRateLimit
 	}
 	if strings.EqualFold(check.Status, "bot") {
-		return "", fmt.Errorf("%w: checkbox captcha rejected: status=%s", errCaptchaBot, check.Status)
+		return "", fmt.Errorf("%w: checkbox captcha rejected: status=%s response=%s", errCaptchaBot, check.Status, check.details)
 	}
 	if !strings.EqualFold(check.Status, "ok") {
-		return "", fmt.Errorf("checkbox captcha rejected: status=%s", check.Status)
+		return "", fmt.Errorf("checkbox captcha rejected: status=%s response=%s", check.Status, check.details)
 	}
 	if check.SuccessToken == "" {
 		return "", errors.New("captcha success token not found")
@@ -685,10 +729,7 @@ func (s *captchaSession) doRaw(
 	form [][2]string,
 	extraHeaders map[string]string,
 ) ([]byte, error) {
-	data, status, err := s.doRawStatus(method, endpoint, form, extraHeaders)
-	if err == nil && status == 429 {
-		return nil, ErrRateLimited
-	}
+	data, _, err := s.doRawStatus(method, endpoint, form, extraHeaders)
 	return data, err
 }
 
@@ -725,18 +766,33 @@ func (s *captchaSession) doRawStatus(
 	start := time.Now()
 	resp, err := s.client.Do(req)
 	if err != nil {
-		s.logger().Debugf("[Captcha] http %s %s failed t=%s after=%s %s form=%s err=%v", method, SafeURL(endpoint), s.elapsed(), time.Since(start).Truncate(time.Millisecond), navSummary(req), captchaFormSummary(form), err)
-		return nil, 0, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		s.logger().Debugf("[Captcha] http %s %s failed t=%s after=%s %s form=%s err_type=%T", method, SafeURL(endpoint), s.elapsed(), time.Since(start).Truncate(time.Millisecond), navSummary(req), captchaFormSummary(form), err)
+		return nil, 0, fmt.Errorf("%w: %w", ErrUnavailable, privateRequestError{err})
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
 			s.logger().Warnf("[Captcha] close body: %s", closeErr)
 		}
 	}()
+	if resp.StatusCode == 429 {
+		s.logger().Debugf("[Captcha] http %s %s status=429", method, SafeURL(endpoint))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		return nil, resp.StatusCode, WithResponseBody(NewRateLimitError(SafeURL(endpoint)+" HTTP 429", resp.Header.Get("Retry-After")), body)
+	}
+	if method == fhttp.MethodPost && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		return nil, resp.StatusCode, WithResponseBody(fmt.Errorf("%w: %s HTTP %d", ErrUnavailable, SafeURL(endpoint), resp.StatusCode), body)
+	}
 	data, readErr := io.ReadAll(resp.Body)
 	s.logger().Debugf("[Captcha] http %s %s status=%d bytes=%d t=%s after=%s %s form=%s", method, SafeURL(endpoint), resp.StatusCode, len(data), s.elapsed(), time.Since(start).Truncate(time.Millisecond), navSummary(req), captchaFormSummary(form))
 	if readErr != nil {
 		return nil, resp.StatusCode, fmt.Errorf("%w: %w", ErrUnavailable, readErr)
+	}
+	if method == fhttp.MethodPost {
+		var raw map[string]any
+		if json.Unmarshal(data, &raw) == nil && LimitedResponse(raw) {
+			return nil, resp.StatusCode, WithResponse(NewRateLimitError(SafeURL(endpoint)+" API limit", resp.Header.Get("Retry-After")), raw)
+		}
 	}
 	return data, resp.StatusCode, nil
 }
@@ -767,38 +823,14 @@ func (s *captchaSession) elapsed() string {
 }
 
 func (s *captchaSession) dumpExchange(req *fhttp.Request, body []byte) {
-	if !strings.Contains(req.URL.Path, "captchaNotRobot.check") &&
-		!strings.Contains(req.URL.Path, "captchaNotRobot.componentDone") {
+	if !strings.Contains(req.URL.Path, "captchaNotRobot.check") && !strings.Contains(req.URL.Path, "captchaNotRobot.componentDone") {
 		return
 	}
-	s.logger().Debugf("[Captcha] we sent %s data: %s", req.URL.Path, string(body))
-	for _, name := range req.Header[fhttp.HeaderOrderKey] {
-		if v := req.Header.Get(name); v != "" {
-			s.logger().Debugf("[Captcha] header (%s): %s = %s", req.URL.Path, name, v)
-		}
-	}
-	if cookies := s.client.GetCookies(req.URL); len(cookies) > 0 {
-		pairs := make([]string, 0, len(cookies))
-		for _, c := range cookies {
-			pairs = append(pairs, c.Name+"="+c.Value)
-		}
-		s.logger().Debugf("[Captcha] header (%s): cookie = %s", req.URL.Path, strings.Join(pairs, "; "))
-	} else {
-		s.logger().Debugf("[Captcha] header (%s): cookie = <none>", req.URL.Path)
-	}
+	s.logger().Debugf("[Captcha] request operation=%s body_bytes=%d header_count=%d", req.URL.Path, len(body), len(req.Header))
 }
 
 func captchaAPIResponseSummary(raw map[string]any) string {
-	if errData, ok := raw["error"].(map[string]any); ok {
-		return fmt.Sprintf("error code=%s msg=%q keys=%s", captchaStringifyAny(errData["error_code"]), captchaStringifyAny(errData["error_msg"]), captchaMapKeys(errData))
-	}
-	if resp, ok := raw["response"].(map[string]any); ok {
-		status := captchaStringifyAny(resp["status"])
-		showType := captchaStringifyAny(resp["show_captcha_type"])
-		tokenLen := len(captchaStringifyAny(resp["success_token"]))
-		return fmt.Sprintf("ok status=%q show_type=%q success_token_len=%d keys=%s", status, showType, tokenLen, captchaMapKeys(resp))
-	}
-	return "unknown keys=" + captchaMapKeys(raw)
+	return SafeResponse(raw)
 }
 
 func captchaMapKeys(m map[string]any) string {

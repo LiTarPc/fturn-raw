@@ -1,5 +1,7 @@
 # Экспериментальный Raw IP для fturn
 
+> Current multi-device behavior: one shared configuration link supports three simultaneous client processes by default (`-max-devices 3`). Historical single-client deployment notes below describe the original setup. Update firewall/NAT for 10.77.0.2, 10.77.0.3 and 10.77.0.4 before using multiple devices; see [raw-server.md](raw-server.md).
+
 Отдельный проект `fturn-raw-experimental`, ветка `experiment/raw-ip`.
 Исходная версия сохранена в первом коммите. Новые программы: `raw-client` и
 `raw-server`; прежние `client` и `server` продолжают работать.

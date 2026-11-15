@@ -75,7 +75,7 @@ func TestFetchStopsCredentialChainOnExplicitLimit(t *testing.T) {
 	c.cooldown = newCooldownStore([]string{filepath.Join(t.TempDir(), "vk_persona.json")})
 	c.tokenChain = func(context.Context, string, int, VKCredentials, tlsclient.CookieJar) (string, string, []string, error) {
 		calls++
-		return "", "", nil, c.captchaLimited(1)
+		return "", "", nil, c.rateLimited(1, captcha.ErrRateLimited)
 	}
 	_, _, _, err := c.fetch(context.Background(), "test", 1)
 	if !errors.Is(err, captcha.ErrRateLimited) || calls != 1 {

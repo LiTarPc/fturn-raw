@@ -31,8 +31,9 @@ type Stream struct {
 	Relay         net.PacketConn
 	ServerUDPAddr *net.UDPAddr
 	// PermDead закрывается при стойком провале ChannelBind refresh (relay блэкхолит трафик).
-	PermDead <-chan struct{}
-	close    func() error
+	PermDead    <-chan struct{}
+	Maintenance *MaintenanceState
+	close       func() error
 }
 
 // Close освобождает аллокацию, TURN-клиент и транспортное соединение.
@@ -45,6 +46,12 @@ func (s *Stream) Close() error {
 
 // Open выполняет подключение к TURN-серверу и создаёт релей-соединение.
 func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAddr string) (*Stream, error) {
+	dialTimeout := cfg.DialTimeout
+	if dialTimeout == 0 {
+		dialTimeout = 5 * time.Second
+	}
+	openCtx, cancelOpen := context.WithTimeout(ctx, dialTimeout)
+	defer cancelOpen()
 	urlhost, urlport, err := net.SplitHostPort(rawAddr)
 	if err != nil {
 		return nil, fmt.Errorf("parse TURN addr: %w", err)
@@ -56,23 +63,29 @@ func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAdd
 		urlport = cfg.PortOverride
 	}
 	turnServerAddr := net.JoinHostPort(urlhost, urlport)
-	turnServerUDPAddr, err := net.ResolveUDPAddr("udp", turnServerAddr)
+	port, err := net.DefaultResolver.LookupPort(openCtx, "udp", urlport)
+	if err != nil {
+		return nil, fmt.Errorf("resolve TURN port: %w", err)
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(openCtx, urlhost)
+	if err != nil {
+		return nil, fmt.Errorf("resolve TURN addr: %w", err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("resolve TURN addr: no addresses")
+	}
+	turnServerUDPAddr := &net.UDPAddr{IP: ips[0].IP, Zone: ips[0].Zone, Port: port}
 	if err != nil {
 		return nil, fmt.Errorf("resolve TURN addr: %w", err)
 	}
 	turnServerAddr = turnServerUDPAddr.String()
-
-	dialTimeout := cfg.DialTimeout
-	if dialTimeout == 0 {
-		dialTimeout = 5 * time.Second
-	}
 
 	var (
 		turnConn  net.PacketConn
 		closeConn func() error
 	)
 	if cfg.TransportUDP {
-		raw, derr := (&net.Dialer{Control: netctl.Apply}).Dial("udp", turnServerUDPAddr.String())
+		raw, derr := (&net.Dialer{Control: netctl.Apply}).DialContext(openCtx, "udp", turnServerUDPAddr.String())
 		if derr != nil {
 			return nil, fmt.Errorf("dial TURN (udp): %w", derr)
 		}
@@ -84,10 +97,8 @@ func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAdd
 		turnConn = &netconn.ConnectedUDPConn{UDPConn: c}
 		closeConn = c.Close
 	} else {
-		dctx, cancel := context.WithTimeout(ctx, dialTimeout)
-		defer cancel()
 		d := net.Dialer{Control: netctl.Apply}
-		c, derr := d.DialContext(dctx, "tcp", turnServerAddr)
+		c, derr := d.DialContext(openCtx, "tcp", turnServerAddr)
 		if derr != nil {
 			return nil, fmt.Errorf("dial TURN (tcp): %w", derr)
 		}
@@ -96,6 +107,8 @@ func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAdd
 		turnConn = turn.NewSTUNConn(wrapped)
 		closeConn = c.Close
 	}
+
+	turnConn = &boundedTransport{PacketConn: turnConn}
 
 	var addrFamily turn.RequestedAddressFamily
 	if peer.IP.To4() != nil {
@@ -106,11 +119,13 @@ func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAdd
 
 	// VK отбрасывает CreatePermission refresh с кодом 400; канал поддерживается через ChannelBind.
 	permDead := make(chan struct{})
+	maintenanceState := &MaintenanceState{}
 	var permOnce sync.Once
 	loggerFactory := &permWatchFactory{
 		inner:             &logxFactory{log: cfg.Log, stream: cfg.StreamID, maintenance: cfg.RawMaintenance},
 		threshold:         permFailThreshold,
 		allocationFailure: cfg.RawMaintenance,
+		state:             maintenanceState,
 		onDead:            func() { permOnce.Do(func() { close(permDead) }) },
 	}
 	clientConfig := &turn.ClientConfig{
@@ -137,36 +152,75 @@ func Open(ctx context.Context, cfg Config, peer *net.UDPAddr, user, pass, rawAdd
 		}
 		return nil, fmt.Errorf("create TURN client: %w", err)
 	}
-	if err = client.Listen(); err != nil {
-		client.Close()
-		if cerr := closeConn(); cerr != nil {
-			err = fmt.Errorf("%w (close: %v)", err, cerr)
+
+	// Close the socket before transactions: retransmission may hold the client lock
+	// while writing to the transport. This ordering also bounds cancellation.
+	var abortOnce sync.Once
+	var relayMu sync.Mutex
+	var allocated net.PacketConn
+	abort := func() {
+		abortOnce.Do(func() {
+			_ = closeConn()
+			client.Close()
+			relayMu.Lock()
+			r := allocated
+			relayMu.Unlock()
+			if r != nil {
+				_ = r.Close()
+			}
+		})
+	}
+	stopParent := context.AfterFunc(ctx, abort)
+	stopOpen := context.AfterFunc(openCtx, abort)
+	failed := true
+	defer func() {
+		stopOpen()
+		if failed {
+			stopParent()
+			abort()
 		}
+	}()
+	if err = client.Listen(); err != nil {
 		return nil, fmt.Errorf("TURN listen: %w", err)
 	}
 	relay, err := client.Allocate()
 	if err != nil {
-		client.Close()
-		if cerr := closeConn(); cerr != nil {
-			err = fmt.Errorf("%w (close: %v)", err, cerr)
+		if openCtx.Err() != nil {
+			err = openCtx.Err()
 		}
 		return nil, fmt.Errorf("TURN allocate: %w", err)
 	}
-
-	return &Stream{
-		Relay:         relay,
-		ServerUDPAddr: turnServerUDPAddr,
-		PermDead:      permDead,
-		close: func() error {
-			var firstErr error
-			if cerr := relay.Close(); cerr != nil {
-				firstErr = cerr
-			}
-			client.Close()
-			if cerr := closeConn(); cerr != nil && firstErr == nil {
-				firstErr = cerr
-			}
-			return firstErr
-		},
-	}, nil
+	relayMu.Lock()
+	allocated = relay
+	relayMu.Unlock()
+	if !stopOpen() || openCtx.Err() != nil || ctx.Err() != nil {
+		abort()
+		_ = relay.Close()
+		err = openCtx.Err()
+		if err == nil {
+			err = ctx.Err()
+		}
+		return nil, err
+	}
+	// After allocation allow a short goodbye window on normal session shutdown.
+	// Allocate cancellation above remains immediate; a blocked write still aborts
+	// immediately through deadlineRelay. The fallback also wakes idle readers.
+	stopParent()
+	stopParent = context.AfterFunc(ctx, func() { time.AfterFunc(250*time.Millisecond, abort) })
+	var closeOnce sync.Once
+	var closeErr error
+	closeStream := func() error {
+		closeOnce.Do(func() {
+			stopParent()
+			// Best-effort deallocation gets a short budget; forced close always follows.
+			timer := time.AfterFunc(250*time.Millisecond, abort)
+			closeErr = relay.Close()
+			abort()
+			timer.Stop()
+		})
+		return closeErr
+	}
+	guarded := &deadlineRelay{PacketConn: relay, abort: abort}
+	failed = false
+	return &Stream{Relay: guarded, ServerUDPAddr: turnServerUDPAddr, PermDead: permDead, Maintenance: maintenanceState, close: closeStream}, nil
 }

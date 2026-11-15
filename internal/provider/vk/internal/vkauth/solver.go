@@ -55,3 +55,6 @@ type ManualSolveFunc func(
 	dialer net.Dialer,
 	profile browserprofile.Profile,
 ) (token string, err error)
+
+// PowCaptureFunc returns a browser envelope, never an authorization success token.
+type PowCaptureFunc func(context.Context, string, net.Dialer, browserprofile.Profile) (string, error)

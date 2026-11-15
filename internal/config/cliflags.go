@@ -54,6 +54,8 @@ func ParseClient(args []string, errOut io.Writer) (*Client, error) {
 	fs.DurationVar(&r.ObfTiming, "obf-timing", r.ObfTiming, "межпакетная задержка для RTP-мимикрии (напр. 20ms); 0=выкл")
 	fs.IntVar(&r.StreamsPerCred, "streams-per-cred", r.StreamsPerCred, "TURN-потоков на один кеш VK-creds; только -provider vk")
 	fs.BoolVar(&r.Debug, "debug", r.Debug, "подробные debug-логи")
+	fs.BoolVar(&r.AdvancedCaptcha, "advanced-captcha", r.AdvancedCaptcha, "use real browser PoW before automatic VK verification (opt-in)")
+	fs.BoolVar(&r.AutoCaptcha, "auto-captcha", r.AutoCaptcha, "allow automatic VK verification; false selects manual-only")
 	fs.BoolVar(&r.ManualCaptcha, "manual-captcha", r.ManualCaptcha, "ручная VK captcha в браузере вместо авто; только -provider vk")
 	fs.StringVar(&r.Platform, "platform", r.Platform, "класс устройства персоны VK-auth: desktop | mobile; только -provider vk")
 	fs.StringVar(&r.DNSMode, "dns-mode", r.DNSMode, "резолвер клиента: plain | doh | auto")

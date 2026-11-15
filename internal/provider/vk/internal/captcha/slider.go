@@ -60,6 +60,9 @@ func (s *captchaSession) solveSliderCaptcha(
 	}
 	s.logger().Debugf("[Captcha] slider puzzle decoded: grid=%d attempts=%d swaps=%d", puzzle.Size, puzzle.Attempts, len(puzzle.Swaps))
 
+	if puzzle.Attempts == 0 {
+		return "", ErrRateLimited
+	}
 	guesses, err := rankSliderGuesses(puzzle.Image, puzzle.Size, puzzle.Swaps)
 	if err != nil {
 		return "", err
@@ -95,6 +98,12 @@ func (s *captchaSession) solveSliderCaptcha(
 			return "", err
 		}
 		s.logger().Debugf("[Captcha] slider attempt %d status=%s show_type=%s token_len=%d", i+1, check.Status, check.ShowType, len(check.SuccessToken))
+		if strings.EqualFold(check.Status, "bot") {
+			return "", fmt.Errorf("%w: slider rejected response=%s", errCaptchaBot, check.details)
+		}
+		if check.ShowType != "" && !strings.EqualFold(check.ShowType, "slider") {
+			return "", &captchaShowTypeError{ShowType: check.ShowType, Content: check.Content}
+		}
 		if strings.EqualFold(check.Status, "ok") {
 			if check.SuccessToken == "" {
 				return "", errors.New("captcha success token not found")
@@ -116,7 +125,7 @@ func (s *captchaSession) solveSliderCaptcha(
 func parseSliderPuzzle(raw map[string]any) (*sliderPuzzle, error) {
 	resp, ok := raw["response"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid slider content response: %v", raw)
+		return nil, fmt.Errorf("invalid slider content response: response=%s", SafeResponse(raw))
 	}
 	status := captchaStringifyAny(resp["status"])
 	if !strings.EqualFold(status, "ok") {
@@ -180,8 +189,8 @@ func splitSliderSteps(steps []int) (int, []int, int, error) {
 	} else {
 		Log.Debugf("[Captcha] slider payload without attempts counter; default=%d", attempts)
 	}
-	if attempts <= 0 {
-		attempts = 4
+	if attempts < 0 {
+		return 0, nil, 0, fmt.Errorf("invalid slider attempts: %d", attempts)
 	}
 	if len(tail) == 0 || len(tail)%2 != 0 {
 		return 0, nil, 0, errors.New("invalid slider swap payload")

@@ -5,14 +5,23 @@ package client
 
 import (
 	"net"
+	"time"
 
 	"github.com/pion/stun/v3"
 )
 
 type mockClient struct {
+	setWriteDeadline   func(time.Time) error
 	writeTo            func(data []byte, to net.Addr) (int, error)
 	performTransaction func(msg *stun.Message, to net.Addr, dontWait bool) (TransactionResult, error)
 	onDeallocated      func(relayedAddr net.Addr)
+}
+
+func (c *mockClient) SetWriteDeadline(t time.Time) error {
+	if c.setWriteDeadline != nil {
+		return c.setWriteDeadline(t)
+	}
+	return nil
 }
 
 func (c *mockClient) WriteTo(data []byte, to net.Addr) (int, error) {

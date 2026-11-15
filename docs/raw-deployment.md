@@ -1,5 +1,7 @@
 # Установка Raw на Debian и запуск клиента Windows
 
+> Current multi-device behavior: one shared configuration link supports three simultaneous client processes by default (`-max-devices 3`). Historical single-client deployment notes below describe the original setup. Update firewall/NAT for 10.77.0.2, 10.77.0.3 and 10.77.0.4 before using multiple devices; see [raw-server.md](raw-server.md).
+
 На проверенном VPS установлен отдельный `fturn-raw.service`: UDP 56010,
 интерфейс ftraw0, сервер 10.77.0.1/24, клиент 10.77.0.2/24, MTU 1420.
 Существующие службы fturn не заменяются. Этот эксперимент обслуживает один

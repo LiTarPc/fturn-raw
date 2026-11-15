@@ -7,7 +7,7 @@ ConditionPathExists=/dev/net/tun
 [Service]
 Type=simple
 ExecStartPre=/opt/fturn-raw/raw-firewall up
-ExecStart=/opt/fturn-raw/raw-server -listen 0.0.0.0:56010 -tun ftraw0 -address 10.77.0.1/24 -client-ip 10.77.0.2 -mtu 1420 -obf-profile auto -obf-key-file /etc/fturn-raw/raw.key
+ExecStart=/opt/fturn-raw/raw-server -listen 0.0.0.0:56010 -tun ftraw0 -address 10.77.0.1/24 -client-ip 10.77.0.2 -max-devices 3 -mtu 1420 -obf-profile auto -obf-key-file /etc/fturn-raw/raw.key
 ExecStopPost=/opt/fturn-raw/raw-firewall down
 Restart=on-failure
 RestartSec=5

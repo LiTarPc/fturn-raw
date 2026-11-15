@@ -17,6 +17,7 @@ import (
 
 type ServerConfig struct {
 	ClientAddress netip.Addr
+	MaxDevices    int // simultaneous client processes per key; zero defaults to three
 	MTU           int
 	Profile       string
 	Key           []byte
@@ -30,26 +31,33 @@ type serverSession struct {
 	group                    [16]byte
 	codec                    *codec
 	active                   bool
+	address                  netip.Addr // unique server-side address for this client group
 	seen                     time.Time
 }
 
-type rawServer struct {
-	cfg          ServerConfig
-	pc           net.PacketConn
-	dev          Device
-	bases        []*codec
-	mu           sync.Mutex
-	sessions     map[string]*serverSession
-	order        []string
+type serverCursor struct {
 	index, chunk int
-	writeMu      sync.Mutex
 }
 
-// RunServer serves one provisioned IPv4 client with up to 64 parallel workers.
+type rawServer struct {
+	cfg      ServerConfig
+	pc       net.PacketConn
+	dev      Device
+	bases    []*codec
+	mu       sync.Mutex
+	sessions map[string]*serverSession
+	leases   map[[16]byte]deviceLease
+	order    []string
+	cursors  map[netip.Addr]*serverCursor
+	writeMu  sync.Mutex
+}
+
+// RunServer serves up to MaxDevices clients sharing one key and client IP.
+// Each client group has up to 64 parallel workers and its own server-side IP.
 // Both pc and dev are closed when ctx is cancelled or either packet loop fails.
 func RunServer(ctx context.Context, pc net.PacketConn, dev Device, cfg ServerConfig) error {
-	if !cfg.ClientAddress.Is4() {
-		return errors.New("raw: server requires a provisioned IPv4 client address")
+	if _, err := clientPool(cfg.ClientAddress, cfg.MaxDevices); err != nil {
+		return err
 	}
 	if err := validateMTU(cfg.MTU); err != nil {
 		return err
@@ -166,11 +174,15 @@ func (s *rawServer) hello(addr net.Addr, plain []byte, base *codec) error {
 	s.mu.Lock()
 	worker := s.sessions[addr.String()]
 	if worker == nil || worker.clientToken != token || worker.group != group || worker.codec.profile != base.profile {
-		if worker == nil && len(s.sessions) >= 128 {
+		if worker == nil && len(s.sessions) >= 128*s.cfg.deviceLimit() {
 			s.mu.Unlock()
 			return errors.New("raw: worker limit reached")
 		}
-		worker = &serverSession{addr: addr, clientToken: token, workerToken: logical, group: group, seen: time.Now()}
+		var assigned netip.Addr
+		if worker != nil && worker.group == group {
+			assigned = worker.address
+		}
+		worker = &serverSession{addr: addr, clientToken: token, workerToken: logical, group: group, address: assigned, seen: time.Now()}
 		if _, err := rand.Read(worker.serverToken[:]); err != nil {
 			s.mu.Unlock()
 			return err
@@ -221,18 +233,30 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 				return nil
 			}
 		}
-		// One key provisions one client. A new client process retires all old
-		// workers after proving possession of a fresh, challenged session key.
+		assigned, ok := s.assignAddress(worker)
+		if !ok {
+			s.mu.Unlock()
+			s.cfg.Log.Warnf("RAW device limit reached (%d simultaneous clients)", s.cfg.deviceLimit())
+			// This response is authenticated with the challenged session key.
+			s.sendSessionControl(worker, frameDeviceLimit)
+			return nil
+		}
+		if worker.address != assigned {
+			worker.address = assigned
+		}
+		// A reconnect may replace only the same logical worker in this group.
+		// Other devices sharing the key keep their sessions and assigned IPs.
 		for address, old := range s.sessions {
-			if old.group != worker.group || (old != worker && worker.workerToken != ([16]byte{}) && old.workerToken == worker.workerToken) {
+			if old != worker && old.group == worker.group && worker.workerToken != ([16]byte{}) && old.workerToken == worker.workerToken {
 				s.cfg.Log.Infof("RAW worker retired on authenticated replacement: %s -> %s", old.addr, worker.addr)
 				s.remove(address)
 			}
 		}
 		worker.active, worker.seen = true, time.Now()
+		s.rememberLease(worker)
 		s.mu.Unlock()
 		if !active {
-			s.cfg.Log.Infof("RAW authenticated worker %s for %s profile=%s", worker.addr, s.cfg.ClientAddress, worker.codec.profile)
+			s.cfg.Log.Infof("RAW authenticated worker %s for %s profile=%s", worker.addr, worker.address, worker.codec.profile)
 		}
 		s.sendSessionControl(worker, frameReady)
 		return nil
@@ -252,7 +276,11 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 		}
 		s.mu.Lock()
 		worker.seen = time.Now()
+		s.rememberLease(worker)
 		s.mu.Unlock()
+		if err := translateIPv4(packet, s.cfg.ClientAddress, worker.address, true); err != nil {
+			return nil
+		}
 		if _, err := s.dev.Write(packet); err != nil {
 			return fmt.Errorf("raw: write TUN: %w", err)
 		}
@@ -262,6 +290,7 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 		}
 		s.mu.Lock()
 		worker.seen = time.Now()
+		s.rememberLease(worker)
 		s.mu.Unlock()
 		s.sendSessionControl(worker, framePong)
 		return nil
@@ -281,7 +310,8 @@ func (s *rawServer) sessionPacket(worker *serverSession, plain []byte) error {
 	case frameClose:
 		if len(plain) == 1 {
 			s.mu.Lock()
-			s.remove(worker.addr.String())
+			s.removeCurrent(worker)
+			s.releaseClosedLease(worker.group)
 			s.mu.Unlock()
 		}
 	}
@@ -299,48 +329,77 @@ func (s *rawServer) downlink(ctx context.Context) error {
 			return ctx.Err()
 		}
 		_, dst, err := ipv4(packet[1:n+1], s.cfg.MTU)
-		if err != nil || dst != s.cfg.ClientAddress {
+		if err != nil {
 			continue
 		}
-		worker := s.pick(time.Now())
+		worker := s.pick(time.Now(), dst)
 		if worker == nil {
+			continue
+		}
+		if err := translateIPv4(packet[1:n+1], worker.address, s.cfg.ClientAddress, false); err != nil {
 			continue
 		}
 		packet[0] = frameData
 		if err := s.send(worker.addr, worker.codec, packet[:n+1]); err != nil {
 			s.cfg.Log.Debugf("RAW downlink send: %v", err)
 			s.mu.Lock()
-			s.remove(worker.addr.String())
+			s.removeCurrent(worker)
 			s.mu.Unlock()
 		}
 	}
 }
 
-func (s *rawServer) pick(now time.Time) *serverSession {
+func (s *rawServer) pick(now time.Time, destination netip.Addr) *serverSession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for range len(s.order) {
-		if s.index >= len(s.order) {
-			s.index = 0
+	cursor := s.cursors[destination]
+	if cursor == nil {
+		// Only provisioned pool addresses may allocate scheduling state.
+		pool, err := clientPool(s.cfg.ClientAddress, s.cfg.MaxDevices)
+		if err != nil {
+			return nil
 		}
-		worker := s.sessions[s.order[s.index]]
-		if worker != nil && worker.active && now.Sub(worker.seen) < 90*time.Second {
-			// Small chunks reduce reordering of the inner TCP stream across TURN paths.
-			s.chunk++
-			if s.chunk >= 16 {
-				s.index++
-				s.chunk = 0
+		allowed := false
+		for _, ip := range pool {
+			if ip == destination {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return nil
+		}
+		if s.cursors == nil {
+			s.cursors = make(map[netip.Addr]*serverCursor)
+		}
+		cursor = &serverCursor{}
+		s.cursors[destination] = cursor
+	}
+	for range len(s.order) {
+		if cursor.index >= len(s.order) {
+			cursor.index = 0
+		}
+		worker := s.sessions[s.order[cursor.index]]
+		if worker != nil && worker.active && worker.address == destination && now.Sub(worker.seen) < 90*time.Second {
+			// Each device independently rotates its own workers in small chunks.
+			cursor.chunk++
+			if cursor.chunk >= 16 {
+				cursor.index++
+				cursor.chunk = 0
 			}
 			return worker
 		}
-		s.index++
-		s.chunk = 0
+		cursor.index++
+		cursor.chunk = 0
 	}
 	return nil
 }
 
 // remove is called with mu held.
 func (s *rawServer) remove(key string) {
+	if worker := s.sessions[key]; worker != nil && worker.active {
+		s.rememberLease(worker)
+	}
 	delete(s.sessions, key)
 	for i, k := range s.order {
 		if k == key {
@@ -348,9 +407,11 @@ func (s *rawServer) remove(key string) {
 			break
 		}
 	}
-	s.chunk = 0
-	if s.index >= len(s.order) {
-		s.index = 0
+	for _, cursor := range s.cursors {
+		cursor.chunk = 0
+		if cursor.index >= len(s.order) {
+			cursor.index = 0
+		}
 	}
 }
 
@@ -366,13 +427,14 @@ func (s *rawServer) expire(now time.Time) {
 			s.remove(key)
 		}
 	}
+	s.expireLeases(now)
 }
 
 func (s *rawServer) sendSessionControl(worker *serverSession, kind byte) {
 	if err := s.send(worker.addr, worker.codec, []byte{kind}); err != nil {
 		s.cfg.Log.Debugf("RAW control send: %v", err)
 		s.mu.Lock()
-		s.remove(worker.addr.String())
+		s.removeCurrent(worker)
 		s.mu.Unlock()
 	}
 }

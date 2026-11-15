@@ -17,7 +17,10 @@ if [ "$mode" = up ]; then
  [ "$(cat /proc/sys/net/ipv4/ip_forward)" = 1 ] || { echo 'Enable IPv4 forwarding before starting Raw' >&2; exit 1; }
 fi
 rule filter INPUT -p udp --dport 56010 -m comment --comment fturn-raw-experiment -j ACCEPT
-rule filter INPUT -i ftraw0 -s 10.77.0.2/32 -d 10.77.0.1/32 -m comment --comment fturn-raw-experiment -j ACCEPT
-rule filter FORWARD -i ftraw0 -o ens3 -s 10.77.0.2/32 -m comment --comment fturn-raw-experiment -j ACCEPT
-rule filter FORWARD -i ens3 -o ftraw0 -d 10.77.0.2/32 -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment fturn-raw-experiment -j ACCEPT
-rule nat POSTROUTING -s 10.77.0.2/32 -o ens3 -m comment --comment fturn-raw-experiment -j MASQUERADE
+# Must match -client-ip 10.77.0.2 -max-devices 3 in fturn-raw.service.
+for client_ip in 10.77.0.2 10.77.0.3 10.77.0.4; do
+ rule filter INPUT -i ftraw0 -s "$client_ip/32" -d 10.77.0.1/32 -m comment --comment fturn-raw-experiment -j ACCEPT
+ rule filter FORWARD -i ftraw0 -o ens3 -s "$client_ip/32" -m comment --comment fturn-raw-experiment -j ACCEPT
+ rule filter FORWARD -i ens3 -o ftraw0 -d "$client_ip/32" -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment fturn-raw-experiment -j ACCEPT
+ rule nat POSTROUTING -s "$client_ip/32" -o ens3 -m comment --comment fturn-raw-experiment -j MASQUERADE
+done

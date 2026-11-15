@@ -19,10 +19,12 @@ import (
 	"github.com/samosvalishe/free-turn-proxy/internal/clientid"
 	"github.com/samosvalishe/free-turn-proxy/internal/config"
 	"github.com/samosvalishe/free-turn-proxy/internal/logx"
+	"github.com/samosvalishe/free-turn-proxy/internal/rawsocks"
 	"github.com/samosvalishe/free-turn-proxy/internal/rawvpn"
 	"github.com/samosvalishe/free-turn-proxy/internal/session"
 	"github.com/samosvalishe/free-turn-proxy/internal/statedir"
 	"github.com/samosvalishe/free-turn-proxy/internal/wire/rtpopus"
+	"strconv"
 )
 
 func main() {
@@ -100,7 +102,16 @@ func run() error {
 		return err
 	}
 	defer rawvpn.CloseControlDNS()
-	dev, err := rawvpn.OpenDevice(opts.TUN, opts.Address, opts.MTU)
+	var dev rawvpn.Device
+	if endpoint := os.Getenv("FREETURN_RAW_SOCKS_PORT"); endpoint != "" {
+		port, e := strconv.Atoi(endpoint)
+		if e != nil {
+			return e
+		}
+		dev, err = rawsocks.Open(prefix.Addr(), opts.MTU, port, os.Getenv("FREETURN_RAW_SOCKS_PASSWORD"))
+	} else {
+		dev, err = rawvpn.OpenDevice(opts.TUN, opts.Address, opts.MTU)
+	}
 	if err != nil {
 		return err
 	}
@@ -120,7 +131,8 @@ func run() error {
 		if e != nil {
 			return fmt.Errorf("bypass configuration: %w", e)
 		}
-		if rules.Enabled && (runtime.GOOS != "windows" || opts.ControlInterface <= 0) {
+		androidDirect := runtime.GOOS == "android" && os.Getenv("FREETURN_RAW_PROTECT_SOCKET") != "" && os.Getenv("FREETURN_RAW_TUN_SOCKET") != ""
+		if rules.Enabled && !androidDirect && (runtime.GOOS != "windows" || opts.ControlInterface <= 0) {
 			return errors.New("bypass requires a selected Windows control interface")
 		}
 		wrapped, e := bypass.Wrap(ctx, dev, rules, prefix.Addr(), opts.MTU, rawvpn.BypassResolver())
@@ -158,6 +170,8 @@ Usage:
   -streams-per-cred n    Streams per VK credential cache (default 5)
   -dns-mode mode         auto (default), doh, or plain
   -dns-servers list      Custom DNS resolver addresses
+  -advanced-captcha      Opt in to browser PoW before automatic verification
+  -auto-captcha=false    Disable automatic verification (manual-only)
   -manual-captcha        Use manual CAPTCHA solver
   -platform name        VK device persona: desktop (default) or mobile
   -client-id id          VK fingerprint seed; generated/persisted if omitted

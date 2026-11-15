@@ -55,6 +55,9 @@ func Wrap(ctx context.Context, raw rawvpn.Device, c bypassrules.Config, source n
 	}
 	c.Settings = s
 	d := &Device{raw: raw, policy: newPolicy(c), source: source, mtu: mtu, owners: lookupOwner, decisions: map[flow]*tcpDecision{}, udp: map[flow]*udpFlow{}, slots: make(chan struct{}, 512)}
+	if err := d.policy.loadSRS(c.SRSFiles); err != nil {
+		return nil, err
+	}
 	d.ctx, d.cancel = context.WithCancel(ctx)
 	dialer := &net.Dialer{Timeout: 12 * time.Second, KeepAlive: 30 * time.Second, Control: netctl.Apply}
 	d.dial = dialer.DialContext
@@ -135,7 +138,7 @@ func (d *Device) Read(b []byte) (int, error) {
 	}
 }
 func (d *Device) selected(f flow) (bool, owner) {
-	if d.policy.site(f.Dst) {
+	if d.policy.site(f.Dst) || d.policy.matchRules(f) {
 		return true, owner{}
 	}
 	if len(d.policy.apps) > 0 {

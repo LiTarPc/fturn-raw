@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync/atomic"
 
 	"github.com/samosvalishe/free-turn-proxy/internal/logx"
 	"github.com/samosvalishe/free-turn-proxy/internal/provider"
@@ -18,6 +19,9 @@ type Config struct {
 	Link            string
 	Dialer          net.Dialer
 	ManualOnly      bool
+	AdvancedCaptcha bool
+	AutoRejected    *atomic.Bool
+	PowCapture      PowCaptureFunc
 	Platform        string
 	StreamsPerCache int
 	StreamsAlive    func() int32
@@ -26,10 +30,12 @@ type Config struct {
 	StatePaths      []string
 	Log             logx.Logger
 	Debug           bool
+	Interactive     *InteractiveHooks
 }
 
 // ManualSolverFunc определяет сигнатуру функции для интерактивного решения капчи.
 type ManualSolverFunc = vkauth.ManualSolveFunc
+type PowCaptureFunc = vkauth.PowCaptureFunc
 
 type Provider struct {
 	link string
@@ -44,10 +50,13 @@ func New(cfg Config, solver ManualSolverFunc) (*Provider, error) {
 	captcha.SetLogger(cfg.Log)
 	manualcaptcha.SetLogger(cfg.Log)
 	manualcaptcha.Debug = cfg.Debug
-	auth := vkauth.New(vkauth.Config{
+	authConfig := vkauth.Config{
 		Credentials:     cfg.Credentials,
 		Dialer:          cfg.Dialer,
 		ManualOnly:      cfg.ManualOnly,
+		AdvancedCaptcha: cfg.AdvancedCaptcha,
+		AutoRejected:    cfg.AutoRejected,
+		PowCapture:      cfg.PowCapture,
 		Platform:        browserprofile.PlatformFromString(cfg.Platform),
 		StreamsPerCache: cfg.StreamsPerCache,
 		StreamsAlive:    cfg.StreamsAlive,
@@ -55,7 +64,17 @@ func New(cfg Config, solver ManualSolverFunc) (*Provider, error) {
 		FingerprintSeed: cfg.FingerprintSeed,
 		StatePaths:      cfg.StatePaths,
 		Log:             cfg.Log,
-	})
+	}
+	if cfg.Interactive != nil {
+		authConfig.BrowserSolver = cfg.Interactive.BrowserSolver
+		if cfg.Interactive.PowCapture != nil {
+			authConfig.PowCapture = cfg.Interactive.PowCapture
+		}
+		authConfig.BeforeFetch = cfg.Interactive.BeforeFetch
+		authConfig.OnAuthWait = cfg.Interactive.OnAuthWait
+		authConfig.OnAuthSuccess = cfg.Interactive.OnAuthSuccess
+	}
+	auth := vkauth.New(authConfig)
 	return &Provider{link: cfg.Link, auth: auth}, nil
 }
 

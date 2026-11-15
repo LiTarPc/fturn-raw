@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"os"
 	"sync/atomic"
 
+	"github.com/samosvalishe/free-turn-proxy/internal/captchaipc"
 	"github.com/samosvalishe/free-turn-proxy/internal/client/dnsdial"
 	"github.com/samosvalishe/free-turn-proxy/internal/config"
 	"github.com/samosvalishe/free-turn-proxy/internal/logx"
@@ -39,7 +41,31 @@ func RunRaw(ctx context.Context, cfg *config.Client, dev rawvpn.Device, address 
 	}
 	var connected atomic.Int32
 	total := cfg.TURN.N * max(len(cfg.VK.Links), 1)
-	prov, err := buildProvider(cfg, dialer, &connected, vk.DefaultManualSolver, logger, total)
+	broker, err := captchaipc.FromEnvironment(ctx)
+	if err != nil {
+		return err
+	}
+	if os.Getenv("FREETURN_RAW_ADVANCED_CAPTCHA") == "1" {
+		cfg.VK.AdvancedCaptcha = true
+	}
+	if broker != nil && cfg.VK.AdvancedCaptcha && !cfg.VK.ManualCaptcha && broker.Protocol() != 2 {
+		defer broker.Close()
+		return errors.New("advanced captcha requires captcha IPC protocol 2")
+	}
+	var hooks *vk.InteractiveHooks
+	solver := vk.DefaultManualSolver
+	if broker != nil {
+		defer broker.Close()
+		solver = vk.IPCSolver(broker, true)
+		hooks = &vk.InteractiveHooks{BeforeFetch: broker.Wait, OnAuthWait: broker.Pause, OnAuthSuccess: broker.Authorized}
+		if cfg.VK.AdvancedCaptcha && !cfg.VK.ManualCaptcha {
+			hooks.PowCapture = vk.IPCPowCapture(broker)
+		}
+		if os.Getenv("FREETURN_RAW_BROWSER_CAPTCHA") == "1" && !cfg.VK.ManualCaptcha && !cfg.VK.AdvancedCaptcha {
+			hooks.BrowserSolver = vk.IPCSolver(broker, false)
+		}
+	}
+	prov, err := buildProvider(cfg, dialer, &connected, solver, logger, total, hooks)
 	if err != nil {
 		return err
 	}

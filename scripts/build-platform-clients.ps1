@@ -11,7 +11,7 @@ try {
         $env:GOOS = 'linux'; $env:GOARCH = $arch
         $target = Join-Path $OutputDir "linux-$arch/raw-client"
         New-Item -ItemType Directory -Force (Split-Path -Parent $target) | Out-Null
-        & go build -trimpath -buildvcs=false -ldflags "-s -w -X github.com/samosvalishe/free-turn-proxy/internal/buildinfo.Version=$version" -o $target ./cmd/raw-client
+        & go build -trimpath -buildvcs=false -ldflags "-checklinkname=0 -s -w -X github.com/samosvalishe/free-turn-proxy/internal/buildinfo.Version=$version" -o $target ./cmd/raw-client
         if ($LASTEXITCODE -ne 0) { throw "Linux $arch client build failed" }
         & (Join-Path $PSScriptRoot 'collect-raw-licenses.ps1') -ClientOnly -OutputFile (Join-Path (Split-Path -Parent $target) 'THIRD-PARTY-NOTICES.txt')
     }

@@ -22,6 +22,7 @@ type permWatchFactory struct {
 	onDead            func()
 	threshold         int
 	allocationFailure bool
+	state             *MaintenanceState
 }
 
 func (f *permWatchFactory) NewLogger(scope string) logging.LeveledLogger {
@@ -41,6 +42,7 @@ type permWatchLogger struct {
 }
 
 func (l *permWatchLogger) note(msg string) {
+	l.f.state.note(msg)
 	switch {
 	case l.f.allocationFailure && strings.Contains(msg, "Failed to refresh allocation"):
 		l.mu.Lock()

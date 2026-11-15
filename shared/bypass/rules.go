@@ -27,7 +27,8 @@ type Settings struct {
 type Config struct {
 	Version int `json:"version"`
 	Settings
-	CIDRs []string `json:"cidrs,omitempty"`
+	CIDRs    []string `json:"cidrs,omitempty"`
+	SRSFiles []string `json:"srs_files,omitempty"`
 }
 
 func Normalize(s Settings) (Settings, error) {
@@ -131,7 +132,7 @@ func ParseCIDRs(r io.Reader) ([]string, error) {
 			continue
 		}
 		p, e := netip.ParsePrefix(v)
-		if e != nil || !p.Addr().Is4() || p.Bits() < 1 {
+		if e != nil || !p.Addr().Is4() {
 			return nil, fmt.Errorf("invalid IPv4 CIDR %q", v)
 		}
 		out = append(out, p.Masked().String())

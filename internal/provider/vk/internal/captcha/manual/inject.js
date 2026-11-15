@@ -2,16 +2,51 @@
     'use strict';
 
     const { local: LOCAL, upstream: UPSTREAM } = window.__ftpCaptcha ?? {};
-    const PROXY = '/generic_proxy?proxy_url=';
+    const PROXY = '/local-captcha-resource/';
     const RESULT = '/local-captcha-result';
+    const POW_RESULT = window.__ftpCaptcha?.powPath;
     const CHECK = 'captchaNotRobot.check';
+
+    // In auto mode, use the actual browser's computed PoW envelope. This runs
+    // before VK's inline PoW script, so its final assignment is observable.
+    if (window.__ftpCaptcha?.capturePow && POW_RESULT) {
+        let powValue = window.captchaPowResult;
+        let sent = false;
+        const capturePow = (value) => {
+            if (sent || typeof value !== 'string' || value.length > 1048576) return;
+            const dot = value.indexOf('.');
+            if (dot < 0) return;
+            try {
+                const envelope = JSON.parse(atob(value.slice(dot + 1)));
+                if (!/^[0-9a-f]{64}$/.test(envelope.hash || '') || envelope.error || !envelope.telemetry) return;
+                sent = true;
+                const body = `pow=${encodeURIComponent(value)}`;
+                fetch(POW_RESULT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body,
+                }).then((response) => { if (response.ok) showDone(); else sent = false; }).catch(() => { sent = false; });
+            } catch {}
+        };
+        Object.defineProperty(window, 'captchaPowResult', {
+            configurable: true,
+            enumerable: true,
+            get: () => powValue,
+            set: (value) => { powValue = value; capturePow(value); },
+        });
+        capturePow(powValue);
+    }
 
     function rewriteUrl(url) {
         if (!url || typeof url !== 'string') return url;
         if (url.startsWith(LOCAL)) return url;
         if (url.startsWith(UPSTREAM)) return LOCAL + url.slice(UPSTREAM.length);
-        if (url.startsWith('//')) return PROXY + encodeURIComponent(location.protocol + url);
-        if (url.startsWith('http://') || url.startsWith('https://')) return PROXY + encodeURIComponent(url);
+        if (url.startsWith('//')) url = new URL(UPSTREAM).protocol + url;
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            const target = new URL(url);
+            const origin = btoa(target.origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            return PROXY + origin + target.pathname + target.search + target.hash;
+        }
         return url;
     }
 
@@ -32,7 +67,7 @@
     const extractToken = (data) => data?.response?.success_token;
 
     function sendToken(token) {
-        if (!token) return;
+        if (window.__ftpCaptcha?.capturePow || !token) return;
         const body = `token=${encodeURIComponent(token)}`;
 
         // sendBeacon переживает уход со страницы (mobile Safari)
@@ -99,6 +134,10 @@
     window.fetch = function (...args) {
         const urlStr = typeof args[0] === 'object' ? args[0]?.url : args[0];
         if (typeof args[0] === 'string') args[0] = rewriteUrl(args[0]);
+        else if (args[0] instanceof Request) {
+            const rewritten = rewriteUrl(args[0].url);
+            if (rewritten !== args[0].url) args[0] = new Request(new URL(rewritten, LOCAL).href, args[0]);
+        }
 
         const promise = origFetch.apply(this, args);
         if (typeof urlStr === 'string' && urlStr.includes(CHECK)) {

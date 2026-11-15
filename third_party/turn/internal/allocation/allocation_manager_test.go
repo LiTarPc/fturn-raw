@@ -19,6 +19,7 @@ import (
 	"github.com/pion/transport/v4/reuseport"
 	"github.com/pion/turn/v5/internal/proto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewManagerValidation(t *testing.T) {
@@ -454,6 +455,9 @@ func TestCreateTCPConnectionDuplicateTCPConn(t *testing.T) {
 
 	_, err = manager.CreateTCPConnection(allocation, peer)
 	assert.ErrorIs(t, err, ErrDupeTCPConnection)
+	if assert.True(t, manager.lock.TryLock(), "duplicate rejection must release the manager lock") {
+		manager.lock.Unlock()
+	}
 
 	<-ctx.Done()
 	assert.NoError(t, acceptErr)
@@ -508,48 +512,55 @@ func TestCreateTCPConnectionInvalid(t *testing.T) {
 
 func TestCreateTCPConnectionTimeout(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0") // nolint: noctx
-	assert.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var acceptedConn net.Conn
-	var acceptErr error
-	go func() {
-		acceptedConn, acceptErr = ln.Accept()
-		cancel()
-	}()
-
-	addr, ok := ln.Addr().(*net.TCPAddr)
-	assert.True(t, ok)
-
+	require.NoError(t, err)
+	defer ln.Close() //nolint:errcheck
+	require.NoError(t, ln.(*net.TCPListener).SetDeadline(time.Now().Add(5*time.Second)))
+	addr := ln.Addr().(*net.TCPAddr)
 	peer := proto.PeerAddress{IP: addr.IP, Port: addr.Port}
 
 	manager, err := newTestManager()
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	defer manager.Close() //nolint:errcheck
 	manager.tcpConnectionBindTimeout = time.Millisecond
 
-	turnSocket, err := net.ListenPacket("udp4", "0.0.0.0:0") // nolint: noctx
-	assert.NoError(t, err)
+	// Accept before addTCPConnection starts its short bind timer. Otherwise
+	// a reset can remove the connection from Linux's accept queue and leave
+	// the old test waiting forever for a connection that has already expired.
+	dial := manager.allocateConn
+	var acceptedConn net.Conn
+	manager.allocateConn = func(config AllocateConnConfig) (net.Conn, error) {
+		conn, dialErr := dial(config)
+		if dialErr != nil {
+			return nil, dialErr
+		}
+		var acceptErr error
+		acceptedConn, acceptErr = ln.Accept()
+		if acceptErr != nil {
+			_ = conn.Close()
+			return nil, acceptErr
+		}
+		return conn, nil
+	}
 
-	fiveTuple := randomFiveTuple()
-	allocation, err := manager.CreateAllocation(fiveTuple, turnSocket, proto.ProtoTCP,
+	turnSocket, err := net.ListenPacket("udp4", "127.0.0.1:0") // nolint: noctx
+	require.NoError(t, err)
+	defer turnSocket.Close() //nolint:errcheck
+	allocation, err := manager.CreateAllocation(randomFiveTuple(), turnSocket, proto.ProtoTCP,
 		0, proto.DefaultLifetime, "", "", proto.RequestedFamilyIPv4)
-	assert.NoError(t, err)
-	allocation.RelayAddr = &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: rand.Intn(60999-32768+1) + 32768} //nolint:gosec
+	require.NoError(t, err)
+	allocation.RelayAddr = &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}
 
 	connectionID, err := manager.CreateTCPConnection(allocation, peer)
-	assert.NoError(t, err)
-	assert.NotZero(t, connectionID)
-
-	time.Sleep(time.Millisecond * 100)
+	require.NoError(t, err)
+	require.NotZero(t, connectionID)
+	defer acceptedConn.Close() //nolint:errcheck
+	assert.Eventually(t, func() bool {
+		manager.lock.RLock()
+		defer manager.lock.RUnlock()
+		_, exists := allocation.tcpConnections[connectionID]
+		return !exists
+	}, 2*time.Second, time.Millisecond, "unbound TCP connection must expire")
 	assert.Nil(t, manager.GetTCPConnection("", connectionID))
-
-	<-ctx.Done()
-	assert.NoError(t, acceptErr)
-	assert.NoError(t, acceptedConn.Close())
-	assert.NoError(t, ln.Close())
-	assert.NoError(t, turnSocket.Close())
 }
 
 func TestCreateAllocationIPv6(t *testing.T) {

@@ -1,20 +1,11 @@
-# FturnRaw 0.1.13 component versions
+# FturnRaw component versions
 
-| Component | Version |
-| --- | --- |
-| Windows application / interface | 0.1.13 |
-| Raw client core | 0.1.12 |
-| Raw server core | 0.1.10 |
+Release v1.1.0 stamps both client core and server core as 1.1.0. The source basis
+is RAW android.7 from stable Fturn Android 4.3.8. Android application and Windows
+interface versions are independent; this core release does not rebuild either UI.
 
-The interface uses the burgundy palette and reports both application and actual
-client-core versions. The Windows package retains the exact client core from 0.1.12.
-Separately added Linux and Android 0.1.12 packages use the same transport, with
-platform-specific TUN adapters; see raw-platform-clients.md.
-The separately published 0.1.10 server supports one client process per key;
-connecting another process replaces the previous client's sessions.
-The settings card reads `runtime/raw-client.exe --version`; server version is
-checked separately with `raw-server --version` when supported by that build.
+Check raw-client --version (FturnRaw core 1.1.0) and raw-server --version
+(FturnRaw server 1.1.0). Existing 0.1.x, 1.0.0 and 1.0.1-beta releases remain available.
 
-Current component versions are stored in `internal/buildinfo/core-version.txt`,
-`internal/buildinfo/server-version.txt`, and `ui/newservice/wails.json`.
-This release does not include the unpublished multi-device work.
+The three-device default requires a multi-device RAW server and forwarding/NAT
+for its assigned addresses. rtpopus2/rtpopus3 wire profiles and keys remain usable.
