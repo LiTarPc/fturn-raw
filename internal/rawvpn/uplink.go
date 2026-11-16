@@ -15,15 +15,10 @@ const (
 	uplinkCapacity = 256
 	// Every path can use the shared budget; packet payloads still share the
 	// single atomic 256-packet reservation. A busy flow must not drop at 64.
-	uplinkPathCapacity       = uplinkCapacity
-	uplinkFlowLimit          = 8192
-	uplinkFlowTTL            = 2 * time.Minute
-	uplinkFlowletGap         = 20 * time.Millisecond
-	uplinkSwitchCooldown     = 150 * time.Millisecond
-	uplinkRetransmitCooldown = 250 * time.Millisecond
-	uplinkPenaltyDuration    = 15 * time.Second
-	uplinkLoadWindow         = 500 * time.Millisecond
-	uplinkFlowletMinPackets  = 12
+	uplinkPathCapacity = uplinkCapacity
+	uplinkFlowLimit    = 8192
+	uplinkFlowTTL      = 2 * time.Minute
+	uplinkLoadWindow   = 500 * time.Millisecond
 )
 
 func validateUplink(mode string) error {
@@ -42,7 +37,6 @@ type uplinkPath struct {
 	generation  uint64
 	packets     chan uplinkPacket
 	rttNs       atomic.Int64
-	badUntil    time.Time
 	windowStart time.Time
 	windowBytes uint64
 }
@@ -108,13 +102,9 @@ func (p *uplinkPath) recordBytes(now time.Time, n uint64) {
 
 type tcpFlowKey [12]byte
 type uplinkBinding struct {
-	id            int
-	generation    uint64
-	seen          time.Time
-	switchedAt    time.Time
-	lastSeq       uint32
-	hasSeq        bool
-	packetsOnPath uint32
+	id         int
+	generation uint64
+	seen       time.Time
 }
 
 // A single dispatcher preserves TUN order when assigning TCP packets. Only
@@ -228,7 +218,7 @@ func (q *uplinkQueue) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case packet := <-q.input:
-			key, seq, payloadLen, ok := tcpUplinkPacketInfo(packet.plain)
+			key, _, payloadLen, ok := tcpUplinkPacketInfo(packet.plain)
 			if !ok {
 				select {
 				case q.shared <- packet:
@@ -241,7 +231,7 @@ func (q *uplinkQueue) run(ctx context.Context) {
 			for {
 				q.mu.Lock()
 				if len(q.paths) > 0 {
-					p := q.choosePacketLocked(key, seq, payloadLen, true, time.Now())
+					p := q.choosePacketLocked(key, payloadLen, time.Now())
 					select {
 					case p.packets <- packet:
 					default:
@@ -263,10 +253,10 @@ func (q *uplinkQueue) run(ctx context.Context) {
 	}
 }
 func (q *uplinkQueue) chooseLocked(key tcpFlowKey, now time.Time) *uplinkPath {
-	return q.choosePacketLocked(key, 0, 0, false, now)
+	return q.choosePacketLocked(key, 0, now)
 }
 
-func (q *uplinkQueue) choosePacketLocked(key tcpFlowKey, seq uint32, payloadLen int, hasTCP bool, now time.Time) *uplinkPath {
+func (q *uplinkQueue) choosePacketLocked(key tcpFlowKey, payloadLen int, now time.Time) *uplinkPath {
 	binding, exists := q.flows[key]
 	if exists && now.Sub(binding.seen) < uplinkFlowTTL {
 		var current *uplinkPath
@@ -277,62 +267,12 @@ func (q *uplinkQueue) choosePacketLocked(key tcpFlowKey, seq uint32, payloadLen 
 			}
 		}
 		if current != nil {
-			isRetransmit := hasTCP && payloadLen >= 16 && binding.hasSeq && int32(seq-binding.lastSeq) <= 0
-			if isRetransmit && len(q.paths) > 1 && now.Sub(binding.switchedAt) >= uplinkRetransmitCooldown {
-				current.badUntil = now.Add(uplinkPenaltyDuration)
-				if alt := q.pickBestPathLocked(now, current); alt != nil && alt != current {
-					q.failovers.Add(1)
-					q.next++
-					q.flows[key] = uplinkBinding{
-						id:            alt.id,
-						generation:    alt.generation,
-						seen:          now,
-						switchedAt:    now,
-						lastSeq:       seq,
-						hasSeq:        true,
-						packetsOnPath: 1,
-					}
-					alt.recordBytes(now, uint64(payloadLen))
-					return alt
-				}
-			}
-			if len(q.paths) > 1 && now.Sub(binding.seen) >= uplinkFlowletGap && now.Sub(binding.switchedAt) >= uplinkSwitchCooldown {
-				if alt := q.pickBestPathLocked(now, current); alt != nil && alt != current {
-					curLoad := current.recentBytesAt(now)
-					altLoad := alt.recentBytesAt(now)
-					curRTT := current.rtt()
-					altRTT := alt.rtt()
-					wantSwitch := (current.badUntil.After(now) && !alt.badUntil.After(now)) ||
-						(len(current.packets) >= 4 && len(alt.packets) <= len(current.packets)/2) ||
-						(binding.packetsOnPath >= uplinkFlowletMinPackets && !alt.badUntil.After(now) && len(alt.packets) == 0 &&
-							(altLoad < curLoad/2 || (curRTT > 0 && altRTT > 0 && altRTT*3 < curRTT*2)))
-					if wantSwitch {
-						q.next++
-						q.flows[key] = uplinkBinding{
-							id:            alt.id,
-							generation:    alt.generation,
-							seen:          now,
-							switchedAt:    now,
-							lastSeq:       seq,
-							hasSeq:        hasTCP && payloadLen > 0,
-							packetsOnPath: 1,
-						}
-						if hasTCP && payloadLen > 0 && binding.hasSeq && int32(binding.lastSeq-seq) > 0 {
-							updated := q.flows[key]
-							updated.lastSeq = binding.lastSeq
-							q.flows[key] = updated
-						}
-						alt.recordBytes(now, uint64(payloadLen))
-						return alt
-					}
-				}
-			}
+			// TCP ACK pacing, retransmissions and an empty local queue do not
+			// prove packets on this TURN path have reached the server. Moving
+			// a live flow can overtake its queued or in-flight tail and cause
+			// repeated loss recovery. Only unregistering a failed path permits
+			// failover; load/RTT selection applies to new or expired bindings.
 			binding.seen = now
-			binding.packetsOnPath++
-			if hasTCP && payloadLen > 0 && (!binding.hasSeq || int32(seq-binding.lastSeq) > 0) {
-				binding.lastSeq = seq
-				binding.hasSeq = true
-			}
 			q.flows[key] = binding
 			current.recordBytes(now, uint64(payloadLen))
 			return current
@@ -351,15 +291,7 @@ func (q *uplinkQueue) choosePacketLocked(key tcpFlowKey, seq uint32, payloadLen 
 	}
 	best := q.pickBestPathLocked(now, nil)
 	q.next++
-	q.flows[key] = uplinkBinding{
-		id:            best.id,
-		generation:    best.generation,
-		seen:          now,
-		switchedAt:    now,
-		lastSeq:       seq,
-		hasSeq:        hasTCP && payloadLen > 0,
-		packetsOnPath: 1,
-	}
+	q.flows[key] = uplinkBinding{id: best.id, generation: best.generation, seen: now}
 	best.recordBytes(now, uint64(payloadLen))
 	return best
 }
@@ -387,14 +319,6 @@ func (q *uplinkQueue) pickBestPathLocked(now time.Time, exclude *uplinkPath) *up
 }
 
 func pathBetter(cand, cur *uplinkPath, now time.Time) bool {
-	candBad := cand.badUntil.After(now)
-	curBad := cur.badUntil.After(now)
-	if candBad != curBad {
-		return !candBad
-	}
-	if candBad && !cand.badUntil.Equal(cur.badUntil) {
-		return cand.badUntil.Before(cur.badUntil)
-	}
 	cl, bl := len(cand.packets), len(cur.packets)
 	if cl != bl {
 		return cl < bl
