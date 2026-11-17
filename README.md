@@ -1,8 +1,8 @@
-# FturnRaw 1.1.0
+# FturnRaw 1.1.1
 
 Клиентское и серверное ядро IPv4-туннеля через TURN. Исходники этой версии основаны на RAW android.7 из стабильного Fturn Android 4.3.8.
 
-[Релиз 1.1.0](https://github.com/LiTarPc/fturn-raw/releases/tag/v1.1.0) · [Настройка сервера](docs/QUICK-START.md) · [Клиентские ядра](docs/raw-core-1.1.0.md)
+[Релиз 1.1.1](https://github.com/LiTarPc/fturn-raw/releases/tag/v1.1.1) · [Настройка сервера](docs/QUICK-START.md) · [Клиентские ядра](docs/raw-core-1.1.1.md)
 
 В релизе: клиент Windows x64 с подходящим Wintun, клиенты Linux amd64/arm64, Android arm64 для Termux и VpnService, серверы Linux amd64/arm64 и Windows x64. SHA256SUMS содержит контрольные суммы всех вложений.
 
@@ -12,4 +12,4 @@
 
 Этот выпуск содержит самостоятельные ядра. Windows-интерфейс и Android APK распространяются своими релизами; существующие версии остаются в истории. Релиз ядра не заменяет автоматическое обновление Windows-интерфейса.
 
-[Изменения и границы проверки](docs/releases/v1.1.0.md) · [Лицензия GPL-3.0](LICENSE)
+[Изменения и границы проверки](docs/releases/v1.1.1.md) · [Лицензия GPL-3.0](LICENSE)

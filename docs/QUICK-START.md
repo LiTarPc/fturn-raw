@@ -1,4 +1,4 @@
-# Quick-start: Raw-сервер 1.1.0 на Linux
+# Quick-start: Raw-сервер 1.1.1 на Linux
 
 Скрипт предназначен для новой установки на Debian/Ubuntu с systemd,
 CPU amd64 или arm64 и доступным `/dev/net/tun`. Нужны root/sudo и HTTPS-доступ
@@ -11,12 +11,12 @@ CPU amd64 или arm64 и доступным `/dev/net/tun`. Нужны root/sud
 
 ```bash
 curl -fL --proto '=https' --tlsv1.2 -o quick-start.sh \
-  https://github.com/LiTarPc/fturn-raw/releases/download/v1.1.0/quick-start.sh
+  https://github.com/LiTarPc/fturn-raw/releases/download/v1.1.1/quick-start.sh
 sudo bash quick-start.sh
 ```
 
 Скрипт определит архитектуру и внешний интерфейс, скачает соответствующий
-сервер из релиза **v1.1.0**, сверит архив с `SERVER-SHA256SUMS`, проверит
+сервер из релиза **v1.1.1**, сверит архив с `SERVER-SHA256SUMS`, проверит
 архитектуру и версию бинарника, затем настроит:
 
 - службу `fturn-raw.service` с автозапуском;
@@ -94,7 +94,7 @@ IPv4 forwarding при удалении автоматически не выкл
 
 ```bash
 curl -fL --proto '=https' --tlsv1.2 -o SHA256SUMS \
-  https://github.com/LiTarPc/fturn-raw/releases/download/v1.1.0/SHA256SUMS
+  https://github.com/LiTarPc/fturn-raw/releases/download/v1.1.1/SHA256SUMS
 grep '  quick-start.sh$' SHA256SUMS | sha256sum --check --strict
 ```
 

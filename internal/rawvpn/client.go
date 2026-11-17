@@ -95,7 +95,7 @@ func RunClient(ctx context.Context, dev Device, cfg ClientConfig) error {
 			case <-runCtx.Done():
 				return
 			case <-ticker.C:
-				cfg.Log.Infof("[RAW UPLINK] mode=%s queued=%d enqueue_drop=%d path_drop=%d failovers=%d queue_wait_max_ms=%d", packets.mode, packets.queued.Load(), packets.drops.Load(), packets.pathDrops.Load(), packets.failovers.Load(), packets.waitMax.Swap(0)/int64(time.Millisecond))
+				cfg.Log.Infof("[RAW UPLINK] mode=%s queued=%d enqueue_drop=%d path_drop=%d failovers=%d flowlet_moves=%d queue_wait_max_ms=%d", packets.mode, packets.queued.Load(), packets.drops.Load(), packets.pathDrops.Load(), packets.failovers.Load(), packets.flowletMoves.Load(), packets.waitMax.Swap(0)/int64(time.Millisecond))
 			}
 		}
 	})

@@ -1,11 +1,8 @@
 # FturnRaw component versions
 
-Release v1.1.0 stamps both client core and server core as 1.1.0. The source basis
-is RAW android.7 from stable Fturn Android 4.3.8. Android application and Windows
-interface versions are independent; this core release does not rebuild either UI.
+Release v1.1.1 packages the client and server cores as 1.1.1. Its client starts from
+1.1.0-captcha.2 and changes proactive TCP-flow migration. Client 1.1.1 is wire
+compatible with server 1.1.0. Existing profiles, keys and device limits carry over.
 
-Check raw-client --version (FturnRaw core 1.1.0) and raw-server --version
-(FturnRaw server 1.1.0). Existing 0.1.x, 1.0.0 and 1.0.1-beta releases remain available.
-
-The three-device default requires a multi-device RAW server and forwarding/NAT
-for its assigned addresses. rtpopus2/rtpopus3 wire profiles and keys remain usable.
+Check `raw-client --version` and `raw-server --version`. Android and Windows
+application versions are independent of the standalone core version.
