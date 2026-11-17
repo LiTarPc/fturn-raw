@@ -1,8 +1,8 @@
 {
-  "coreVersion": "1.1.0",
-  "serverVersion": "1.1.0",
+  "coreVersion": "1.1.1",
+  "serverVersion": "1.1.1",
   "goToolchain": "go1.26.10",
-  "sourceSnapshotSha256": "67f5449a1cb235e98fc609b0c28ccdeafc08341d3908348c26ce21258a23366d",
+  "sourceSnapshotSha256": "b720f556eae385e083c2a5a886928dc9bca6bfd995faf59c1092812924c8a3ef",
   "snapshotAlgorithm": "sha256(UTF-8 canonical JSON of files; sort_keys=True, separators=(comma,colon))",
   "origin": {
     "originRepository": "https://github.com/LiTarPc/Fturn-Android",
@@ -47,11 +47,11 @@
     },
     {
       "path": "internal/buildinfo/core-version.txt",
-      "sha256": "1575e1af4a95f12f70b4ee6a6adce8160953d93ea17dc2611b90883ccc3ad3b8"
+      "sha256": "cc52f678848b814373757b460383bf61960e4943c203735adde0a350b3e50989"
     },
     {
       "path": "internal/buildinfo/server-version.txt",
-      "sha256": "1575e1af4a95f12f70b4ee6a6adce8160953d93ea17dc2611b90883ccc3ad3b8"
+      "sha256": "cc52f678848b814373757b460383bf61960e4943c203735adde0a350b3e50989"
     },
     {
       "path": "internal/buildinfo/server.go",
@@ -659,7 +659,7 @@
     },
     {
       "path": "internal/rawsocks/proxy.go",
-      "sha256": "2fb8816592a7bc79913143a2d3e532d552a2d166240262b6927c00cee8a66e23"
+      "sha256": "dd01c6f70d13a588d0aae8ee4b472e0bca7f7ae2c3b3b6de632a2542da16d8f2"
     },
     {
       "path": "internal/rawsocks/proxy_test.go",
@@ -671,7 +671,7 @@
     },
     {
       "path": "internal/rawsocks/tcp_relay.go",
-      "sha256": "b701544c1209335b1ca6d646582967a49773f68a3d2f6d7c9c7744ba18f828ca"
+      "sha256": "55cc9b5471d7a0c42c3e8081acac4fc815d989a24d4dd2440945b9098fc4fc11"
     },
     {
       "path": "internal/rawsocks/tcp_relay_test.go",
@@ -691,7 +691,7 @@
     },
     {
       "path": "internal/rawvpn/client.go",
-      "sha256": "5c549ad35b72e639d0406a95d5875c54df0948585ee6a8210e8c2335720524d0"
+      "sha256": "cf096812ebe7115c045a3b6bb045d75b14eb03bdf40bbd32e3ee46c71f58a297"
     },
     {
       "path": "internal/rawvpn/client_cancel.go",
@@ -843,15 +843,19 @@
     },
     {
       "path": "internal/rawvpn/uplink.go",
-      "sha256": "fdf6ade42f9234d9caab717be8e07162f26aa25e6353a3087c6d17a15aae3168"
+      "sha256": "e3cf69fdc52794966c82ad3d81f847a77bbb802b0a8a8a7a746bcd95af15ecbb"
     },
     {
       "path": "internal/rawvpn/uplink_burst_test.go",
       "sha256": "864eb0961604a44b197cf4cd82fe2eb1fbc729ba978582e2d360e7968c200326"
     },
     {
+      "path": "internal/rawvpn/uplink_guard_test.go",
+      "sha256": "717c2b20868d6e7e59e937eef9e4737e769734c640139c471d100e4a74835069"
+    },
+    {
       "path": "internal/rawvpn/uplink_test.go",
-      "sha256": "82e1841a829c6c4284614d020f20d8a06d2e04a330a0f94796c618c1c2ce1c2c"
+      "sha256": "865b85e0f538fe26083f0f0a36d8faa8b9dfb2a4f7dcd4c8a30656af833dd5a1"
     },
     {
       "path": "internal/routemgr/route_darwin.go",
@@ -983,7 +987,7 @@
     },
     {
       "path": "internal/transport/turndial/deadline.go",
-      "sha256": "606abea2c2d657826311a5dbabc58d4b726ff6bb947d9a1e3201d04810f897d9"
+      "sha256": "0c528485b3f35352563f0bbb91a768391e99fe36c5dcd7ef013f4e0df8a4d75e"
     },
     {
       "path": "internal/transport/turndial/deadline_test.go",
@@ -1183,7 +1187,7 @@
     },
     {
       "path": "third_party/smux/stream.go",
-      "sha256": "dfe4c1651ae80031541dc2b7cebe537c494ed746537a4c55ea99f07b30d0ccb6"
+      "sha256": "ab9612c30a49d6a21dce5c630aaa73be49a6adfbde79f294a7e37c9f621ae19f"
     },
     {
       "path": "third_party/turn/.gitignore",
@@ -1399,7 +1403,7 @@
     },
     {
       "path": "third_party/turn/internal/client/udp_conn.go",
-      "sha256": "7aaa52069d5a160f154a0d938c6d89318b67c4725ad8acb823b43f9673bfb47d"
+      "sha256": "25cb031fb66918d2a30cf94266f215686efe781c985166f58a0efec52c228f0f"
     },
     {
       "path": "third_party/turn/internal/client/udp_conn_test.go",
@@ -1527,7 +1531,7 @@
     },
     {
       "path": "third_party/turn/internal/proto/stun_conn.go",
-      "sha256": "19b125aaacb8fb4a45a88850f3607786f43c7065ed16edd5250574d8be7089a3"
+      "sha256": "61746669d6f2ce51256f28e2347fe5301381a276f1206c07f21244513506ffad"
     },
     {
       "path": "third_party/turn/internal/proto/stun_conn_test.go",
@@ -1651,5 +1655,6 @@
     "baseCommit": "11265eb059a6894e2c57109602badcf91660380f",
     "liveVKManualCompletionVerified": false,
     "releaseOrTagRequested": false
-  }
+  },
+  "releaseBaseCommit": "a2da02f35ca2a48384cb2437bfdd318f5cc6f244"
 }

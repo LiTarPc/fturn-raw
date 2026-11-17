@@ -4,6 +4,8 @@ from pathlib import Path
 import hashlib,re,shutil
 root=Path(__file__).resolve().parent.parent
 out=root/'release';out.mkdir(exist_ok=True)
+client_version = (root/'internal/buildinfo/core-version.txt').read_text().strip()
+server_version = (root/'internal/buildinfo/server-version.txt').read_text().strip()
 for prefix in ['CLIENT','SERVER']:
  records={}
  for p in list(out.glob(prefix+'-SHA256SUMS*')):
@@ -18,8 +20,8 @@ for prefix in ['CLIENT','SERVER']:
  (out/(prefix+'-SHA256SUMS')).write_text(''.join(f'{records[n]}  {n}\n' for n in sorted(records)),encoding='ascii')
 for source,dest in [('scripts/quick-start.sh','quick-start.sh'),('docs/QUICK-START.md','QUICK-START.md'),('SOURCE.json','SOURCE.json')]:
  shutil.copyfile(root/source,out/dest)
-expected={f'fturn-raw-client-1.1.0-{t}.zip' for t in ['windows-amd64','linux-amd64','linux-arm64','android-arm64-termux','android-arm64-vpnservice']}
-expected|={f'fturn-raw-server-1.1.0-{t}.zip' for t in ['linux-amd64','linux-arm64','windows-amd64']}
+expected={f'fturn-raw-client-{client_version}-{t}.zip' for t in ['windows-amd64','linux-amd64','linux-arm64','android-arm64-termux','android-arm64-vpnservice']}
+expected|={f'fturn-raw-server-{server_version}-{t}.zip' for t in ['linux-amd64','linux-arm64','windows-amd64']}
 expected|={'libfturnraw.so','CLIENT-SHA256SUMS','SERVER-SHA256SUMS','quick-start.sh','QUICK-START.md','SOURCE.json'}
 assert {p.name for p in out.iterdir() if p.is_file()}==expected
 (out/'SHA256SUMS').write_text(''.join(hashlib.sha256((out/n).read_bytes()).hexdigest()+'  '+n+'\n' for n in sorted(expected)),encoding='ascii')

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# FturnRaw 1.1.0 quick-start for Linux + systemd. Downloads verified release binaries.
+# FturnRaw 1.1.1 quick-start for Linux + systemd. Downloads verified release binaries.
 set -Eeuo pipefail
-VERSION=1.1.0
+VERSION=1.1.1
 REPOSITORY=LiTarPc/fturn-raw
 SERVICE=fturn-raw.service
 INSTALL_DIR=/opt/fturn-raw
@@ -30,7 +30,7 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
 usage() {
  cat <<'HELP'
-FturnRaw 1.1.0: быстрая установка Linux-сервера (Debian/Ubuntu, systemd).
+FturnRaw 1.1.1: быстрая установка Linux-сервера (Debian/Ubuntu, systemd).
 
   sudo bash quick-start.sh
   sudo bash quick-start.sh --public-ip 203.0.113.10 --vk-link 'https://vk.ru/call/join/...'
@@ -133,7 +133,7 @@ verify_managed() {
  python3 - "$CONFIG_DIR/quick-start.json" "$INSTALL_DIR" "$UNIT_FILE" "$SYSCTL_FILE" <<'PY'
 import hashlib,json,pathlib,sys
 p=pathlib.Path(sys.argv[1]);assert p.is_file() and not p.is_symlink()
-c=json.loads(p.read_text());assert c['managedBy']=='fturn-raw-quick-start' and c['version']=='1.1.0'
+c=json.loads(p.read_text());assert c['managedBy']=='fturn-raw-quick-start' and c['version'] in ('1.1.0', '1.1.1')
 files={'binary':pathlib.Path(sys.argv[2])/'raw-server','firewall':pathlib.Path(sys.argv[2])/'raw-firewall','unit':pathlib.Path(sys.argv[3]),'sysctl':pathlib.Path(sys.argv[4])}
 for name,path in files.items():
     assert path.is_file() and not path.is_symlink() and hashlib.sha256(path.read_bytes()).hexdigest()==c['hashes'][name], 'Файл изменён вручную: '+str(path)
@@ -361,7 +361,7 @@ PY
  python3 - "$CONFIG_DIR/quick-start.json" "$INSTALL_DIR" "$UNIT_FILE" "$SYSCTL_FILE" "$PORT" "$MTU" "$DEVICES" "$INTERFACE" "$PUBLIC_IP" <<'PY'
 import hashlib,json,pathlib,sys
 files={'binary':pathlib.Path(sys.argv[2])/'raw-server','firewall':pathlib.Path(sys.argv[2])/'raw-firewall','unit':pathlib.Path(sys.argv[3]),'sysctl':pathlib.Path(sys.argv[4])}
-c={'managedBy':'fturn-raw-quick-start','version':'1.1.0','port':int(sys.argv[5]),'mtu':int(sys.argv[6]),'devices':int(sys.argv[7]),'interface':sys.argv[8],'publicIP':sys.argv[9],'hashes':{k:hashlib.sha256(p.read_bytes()).hexdigest() for k,p in files.items()}}
+c={'managedBy':'fturn-raw-quick-start','version':'1.1.1','port':int(sys.argv[5]),'mtu':int(sys.argv[6]),'devices':int(sys.argv[7]),'interface':sys.argv[8],'publicIP':sys.argv[9],'hashes':{k:hashlib.sha256(p.read_bytes()).hexdigest() for k,p in files.items()}}
 pathlib.Path(sys.argv[1]).write_text(json.dumps(c,indent=2)+'\n')
 PY
  TRANSACTION=0

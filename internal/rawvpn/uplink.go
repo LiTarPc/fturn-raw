@@ -122,20 +122,21 @@ type uplinkBinding struct {
 // All queues share the original 256-packet budget; congestion drops instead of
 // moving a busy flow to another path and introducing cross-path reordering.
 type uplinkQueue struct {
-	mode       string
-	input      chan uplinkPacket
-	shared     chan uplinkPacket
-	changed    chan struct{}
-	queued     atomic.Int32
-	drops      atomic.Uint64
-	pathDrops  atomic.Uint64
-	failovers  atomic.Uint64
-	waitMax    atomic.Int64
-	mu         sync.Mutex
-	paths      []*uplinkPath
-	flows      map[tcpFlowKey]uplinkBinding
-	next       uint64
-	generation uint64
+	mode         string
+	input        chan uplinkPacket
+	shared       chan uplinkPacket
+	changed      chan struct{}
+	queued       atomic.Int32
+	drops        atomic.Uint64
+	pathDrops    atomic.Uint64
+	failovers    atomic.Uint64
+	flowletMoves atomic.Uint64
+	waitMax      atomic.Int64
+	mu           sync.Mutex
+	paths        []*uplinkPath
+	flows        map[tcpFlowKey]uplinkBinding
+	next         uint64
+	generation   uint64
 }
 
 func newUplinkQueue(mode string) *uplinkQueue {
@@ -296,17 +297,20 @@ func (q *uplinkQueue) choosePacketLocked(key tcpFlowKey, seq uint32, payloadLen 
 					return alt
 				}
 			}
-			if len(q.paths) > 1 && now.Sub(binding.seen) >= uplinkFlowletGap && now.Sub(binding.switchedAt) >= uplinkSwitchCooldown {
+			// A control-only packet does not start a new burst of data. Keep
+			// its route and allow proactive moves only after the local queue
+			// drains. Retransmission recovery above keeps its own criteria.
+			if payloadLen > 0 && len(q.paths) > 1 && len(current.packets) == 0 && now.Sub(binding.seen) >= uplinkFlowletGap && now.Sub(binding.switchedAt) >= uplinkSwitchCooldown {
 				if alt := q.pickBestPathLocked(now, current); alt != nil && alt != current {
 					curLoad := current.recentBytesAt(now)
 					altLoad := alt.recentBytesAt(now)
 					curRTT := current.rtt()
 					altRTT := alt.rtt()
 					wantSwitch := (current.badUntil.After(now) && !alt.badUntil.After(now)) ||
-						(len(current.packets) >= 4 && len(alt.packets) <= len(current.packets)/2) ||
 						(binding.packetsOnPath >= uplinkFlowletMinPackets && !alt.badUntil.After(now) && len(alt.packets) == 0 &&
 							(altLoad < curLoad/2 || (curRTT > 0 && altRTT > 0 && altRTT*3 < curRTT*2)))
 					if wantSwitch {
+						q.flowletMoves.Add(1)
 						q.next++
 						q.flows[key] = uplinkBinding{
 							id:            alt.id,

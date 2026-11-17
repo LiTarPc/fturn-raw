@@ -2,7 +2,7 @@ name: Raw core release
 on:
   push:
     branches: [codex/core-1.1.0]
-    tags: [v1.1.0]
+    tags: [v1.1.0, v1.1.1]
   pull_request:
     branches: [codex/core-1.1.0]
   workflow_dispatch:
@@ -32,6 +32,10 @@ jobs:
           node-version: '22'
       - name: Verify exact release source
         run: python scripts/verify-core-source.py
+      - name: Match source version to release tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: test "$GITHUB_REF_NAME" = "v$(cat internal/buildinfo/core-version.txt)"
       - name: Core tests
         run: go test -mod=readonly ./... -count=1 -timeout=5m
       - name: Go vet
@@ -97,7 +101,7 @@ jobs:
         with:
           name: core-windows-client
           path: |
-            dist/fturn-raw-client-1.1.0-windows-amd64.zip
+            dist/fturn-raw-client-*-windows-amd64.zip
             dist/CLIENT-SHA256SUMS-windows-amd64
           if-no-files-found: error
   servers:
@@ -126,13 +130,13 @@ jobs:
         env:
           SERVER_TARGET: ${{ matrix.target }}
         run: |
-          ./scripts/build-raw-server.ps1 -Version 1.1.0 -Targets $env:SERVER_TARGET
-          ./scripts/test-raw-server-packages.ps1 -Version 1.1.0 -Targets $env:SERVER_TARGET
+          ./scripts/build-raw-server.ps1 -Targets $env:SERVER_TARGET
+          ./scripts/test-raw-server-packages.ps1 -Targets $env:SERVER_TARGET
       - uses: actions/upload-artifact@v4
         with:
           name: core-server-${{ matrix.target }}
           path: |
-            dist/fturn-raw-server-1.1.0-${{ matrix.target }}.zip
+            dist/fturn-raw-server-*-${{ matrix.target }}.zip
             dist/SERVER-SHA256SUMS-${{ matrix.target }}
           if-no-files-found: error
   release-files:
